@@ -39,3 +39,13 @@ export type ProtectionJob = {
   status: JobStatus;
   rpo: string;
 };
+
+export type RestoreRequest = {
+  id: string;
+  customerId: string;
+  serverId: string;
+  restorePoint: string;
+  target: string;
+  status: JobStatus;
+  requestedAt: string;
+};

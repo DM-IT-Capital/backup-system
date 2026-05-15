@@ -1,4 +1,4 @@
-import type { Customer, ProtectedServer, ProtectionJob } from "@/lib/types";
+import type { Customer, ProtectedServer, ProtectionJob, RestoreRequest } from "@/lib/types";
 
 export const customers: Customer[] = [
   {
@@ -93,5 +93,17 @@ export const jobs: ProtectionJob[] = [
     target: "Sandbox network",
     status: "warning",
     rpo: "24h"
+  }
+];
+
+export const restores: RestoreRequest[] = [
+  {
+    id: "restore-apex-001",
+    customerId: "cust-apex",
+    serverId: "srv-esxi-01",
+    restorePoint: "Latest successful backup",
+    target: "Sandbox network",
+    status: "queued",
+    requestedAt: "Today"
   }
 ];
