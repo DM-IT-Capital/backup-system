@@ -117,6 +117,10 @@ export function ControlPlane({
   const protectedCount = store.customers.reduce((sum, customer) => sum + customer.protectedServers, 0);
   const runningJobs = store.jobs.filter((job) => job.status === "running").length;
   const warningCustomers = store.customers.filter((customer) => customer.health === "warning").length;
+  const onlineServers = store.servers.filter((server) => server.agentStatus === "online").length;
+  const queuedRestores = store.restores.filter((restore) => restore.status === "queued").length;
+  const activeUsers = store.users.filter((user) => user.status === "active").length;
+  const systemHealth = warningCustomers > 0 ? "Attention needed" : "Operational";
   const activeCustomer = store.customers.find((customer) => customer.id === selectedCustomer);
   const activeUser = store.users.find((user) => user.id === selectedUser);
   const activeServer = store.servers.find((server) => server.id === selectedServer);
@@ -433,7 +437,7 @@ export function ControlPlane({
     <main className="shell">
       <aside className="sidebar">
         <a className="brand brand-link" href="/">
-          <span className="brand-mark">B</span>
+          <span className="brand-mark">A</span>
           <div>
             <strong>Antarex Backup Control</strong>
             <span>Cloud and on-prem</span>
@@ -450,6 +454,22 @@ export function ControlPlane({
       </aside>
 
       <section className="workspace">
+        <div className="command-bar">
+          <div>
+            <span className="signal-dot" />
+            <strong>{systemHealth}</strong>
+            <span>{store.customers.length} customers monitored</span>
+          </div>
+          <div>
+            <span>Gateways</span>
+            <strong>{onlineServers}/{store.servers.length} online</strong>
+          </div>
+          <div>
+            <span>Users</span>
+            <strong>{activeUsers} active</strong>
+          </div>
+        </div>
+
         <header className="topbar">
           <div>
             <p className="eyebrow">Centralized backup management</p>
@@ -462,6 +482,29 @@ export function ControlPlane({
             <a className="button secondary" href="/auth/signout">Sign out</a>
           </div>
         </header>
+
+        <section className="ops-grid" aria-label="Operations summary">
+          <article>
+            <span>Recovery posture</span>
+            <strong>{warningCustomers > 0 ? "Watch" : "Ready"}</strong>
+            <small>{queuedRestores} restore request{queuedRestores === 1 ? "" : "s"} queued</small>
+          </article>
+          <article>
+            <span>Agent coverage</span>
+            <strong>{onlineServers}/{store.servers.length}</strong>
+            <small>Servers currently reporting online</small>
+          </article>
+          <article>
+            <span>Job activity</span>
+            <strong>{runningJobs}</strong>
+            <small>Running workload protection tasks</small>
+          </article>
+          <article>
+            <span>Access control</span>
+            <strong>{store.users.length}</strong>
+            <small>{activeUsers} active platform user{activeUsers === 1 ? "" : "s"}</small>
+          </article>
+        </section>
 
         {(initialView === "overview" || initialView === "customers") && (
           <>
