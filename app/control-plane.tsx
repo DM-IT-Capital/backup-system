@@ -476,11 +476,6 @@ export function ControlPlane({
             <h1>{initialView === "overview" ? "Protect, replicate, and restore customer workloads" : navItems.find((item) => item.view === initialView)?.label}</h1>
             <p className="status-line">{message}</p>
           </div>
-          <div className="actions">
-            <button type="button" className="button secondary" onClick={() => setModal("server")}>Add server by IP</button>
-            <button type="button" className="button primary" onClick={() => setModal("job")}>Create job</button>
-            <a className="button secondary" href="/auth/signout">Sign out</a>
-          </div>
         </header>
 
         <section className="ops-grid" aria-label="Operations summary">
