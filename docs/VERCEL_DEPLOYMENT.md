@@ -1,65 +1,41 @@
-# Vercel Deployment Guide
+# Vercel Deployment
 
-## Prerequisites
-- Vercel account (vercel.com)
-- Supabase account (supabase.com)
-- GitHub account (recommended for easy deployment)
+This repository is ready to deploy the web control plane to Vercel after dependencies are installed.
 
-## Database Setup (Supabase)
+## Required services
 
-1. Create a new Supabase project at https://supabase.com
-2. Go to Project Settings > Database > Connection Pooling
-3. Copy the connection string with pool mode
-4. Initialize the database by running the init script locally:
-   ```bash
-   export DATABASE_URL="your_supabase_connection_string"
-   cd database && python init_db.py
-   ```
+- Vercel for the Next.js dashboard and API routes.
+- Supabase for Postgres, Auth, and realtime job metadata.
+- On-prem gateway service for actual backup, restore, replication, and server onboarding work.
 
-## Backend Deployment
+## Deploy steps
 
-1. Push your code to GitHub
-2. Go to https://vercel.com and sign in
-3. Click "New Project" > Import Git Repository
-4. Select your backup-system repository
-5. Configure project settings:
-   - Framework Preset: Other
-   - Root Directory: `backend`
-6. Add Environment Variables:
-   - `DATABASE_URL`: Your Supabase connection string
-7. Click Deploy
+1. Create a Supabase project.
+2. Run `docs/SUPABASE_SCHEMA.sql` in the Supabase SQL editor.
+3. Create a Vercel project from this repository.
+4. Add these Vercel environment variables:
 
-## Frontend Deployment
-
-1. In Vercel dashboard, click "New Project"
-2. Import the same GitHub repository
-3. Configure project settings:
-   - Framework Preset: Create React App
-   - Root Directory: `frontend`
-   - Build Command: `npm run build`
-   - Output Directory: `build`
-4. Add Environment Variables:
-   - `REACT_APP_API_URL`: Your backend Vercel URL (e.g., https://backup-system-backend.vercel.app)
-5. Click Deploy
-
-## Update Frontend API Configuration
-
-After deploying the backend, update `frontend/src/App.js`:
-
-```javascript
-const api = axios.create({ 
-  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000/api' 
-});
+```bash
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+AGENT_ENROLLMENT_SECRET=
 ```
 
-## Verification
+5. Deploy with the default Next.js build command:
 
-- Backend: Visit `https://your-backend.vercel.app/api` - should see `{"message":"Backup system API is running"}`
-- Frontend: Visit `https://your-frontend.vercel.app` - should load the dashboard
-- Test API calls from frontend to backend
+```bash
+npm run build
+```
 
-## Notes
+## Vercel boundary
 
-- Both services can be deployed independently
-- Supabase provides automatic backups and scaling
-- Vercel provides unlimited deployments and custom domains
+Keep these workloads outside Vercel:
+
+- Backup data transfer.
+- Restore execution.
+- Hypervisor snapshot and replication work.
+- Agent installation over SSH, WinRM, or PowerShell.
+- Long-running scheduled workers.
+
+Use the Vercel-hosted app as the control plane. The on-prem gateway should perform customer-network operations and report progress back to Supabase/API routes.
