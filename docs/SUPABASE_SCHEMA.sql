@@ -5,6 +5,7 @@ create type server_kind as enum ('windows', 'linux', 'esxi', 'hyperv', 'proxmox'
 create type agent_status as enum ('not_installed', 'installing', 'online', 'offline', 'error');
 create type protection_action as enum ('backup', 'replicate', 'restore');
 create type job_status as enum ('idle', 'queued', 'running', 'warning', 'failed', 'success');
+create type managed_user_status as enum ('active', 'invited', 'disabled');
 
 create table customers (
   id uuid primary key default gen_random_uuid(),
@@ -19,6 +20,18 @@ create table customer_members (
   role text not null check (role in ('owner', 'admin', 'operator', 'viewer')),
   created_at timestamptz not null default now(),
   primary key (customer_id, user_id)
+);
+
+create table managed_users (
+  id uuid primary key default gen_random_uuid(),
+  customer_id uuid not null references customers(id) on delete cascade,
+  name text not null,
+  email text not null,
+  role text not null check (role in ('owner', 'admin', 'operator', 'viewer')),
+  status managed_user_status not null default 'invited',
+  last_seen_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (customer_id, email)
 );
 
 create table sites (
@@ -139,6 +152,7 @@ create table audit_events (
 
 alter table customers enable row level security;
 alter table customer_members enable row level security;
+alter table managed_users enable row level security;
 alter table sites enable row level security;
 alter table gateways enable row level security;
 alter table protected_servers enable row level security;
@@ -187,6 +201,11 @@ create policy "users can create their owner membership"
 on customer_members for insert
 to authenticated
 with check (user_id = auth.uid());
+
+create policy "members can manage users"
+on managed_users for all
+using (is_customer_member(customer_id))
+with check (is_customer_member(customer_id));
 
 create policy "members can manage sites"
 on sites for all

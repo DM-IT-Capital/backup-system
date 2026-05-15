@@ -3,7 +3,7 @@
 ## Phase 1: Control plane
 
 - Supabase Auth and tenant membership. Done for initial email/password flow.
-- Customers, protected servers, jobs, and restore requests. Initial API routes are implemented.
+- Customers, users, protected servers, jobs, and restore requests. Initial API routes are implemented.
 - Sites, repositories, and gateways. Schema exists; full UI still needs to be expanded.
 - Dashboard connected to Supabase data when environment variables are configured.
 - Audit events for every user and system action.

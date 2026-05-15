@@ -1,4 +1,4 @@
-# Backup System
+# Antarex Backup Control
 
 Veeam-style backup management platform for cloud-managed and on-prem deployments.
 
@@ -8,7 +8,8 @@ The first scaffold is a Next.js control plane that can be hosted on Vercel and b
 
 - Dashboard UI for customers, servers, jobs, restore, and agent state.
 - Supabase Auth login with protected dashboard routes.
-- API routes for customer creation, server onboarding, agent deploy commands, job creation, job runs, and restore requests.
+- User management for customer users, roles, invite status, edit, and removal.
+- API routes for customer creation, user management, server onboarding, agent deploy commands, job creation, job runs, and restore requests.
 - TypeScript domain model for tenants, servers, agents, and jobs.
 - Supabase schema with tenant isolation tables and row-level security policies.
 - Architecture notes for cloud, on-prem, and hybrid deployments.

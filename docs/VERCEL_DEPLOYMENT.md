@@ -39,6 +39,23 @@ Use these Vercel project settings:
 
 If the deployment fails with `No Output Directory named "public" found`, the Vercel project is configured as a static site. Change the Output Directory from `public` to `.next`, or clear the setting and let the Next.js preset manage it.
 
+## Login troubleshooting
+
+If `/login` shows `Supabase is not configured`, the app is missing required environment variables.
+
+Set these in Vercel Project Settings > Environment Variables:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+AGENT_ENROLLMENT_SECRET=
+```
+
+Then redeploy. The email and password must belong to a user created in Supabase Authentication.
+
+The Users page manages application-level customer users and roles. Supabase Authentication still controls who can sign in; create real login accounts in Supabase Authentication, then manage their customer-facing access from `/users`.
+
 ## Vercel boundary
 
 Keep these workloads outside Vercel:

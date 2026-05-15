@@ -1,5 +1,5 @@
-import { customers, jobs, restores, servers } from "@/lib/mock-data";
-import type { Customer, ProtectedServer, ProtectionJob, RestoreRequest } from "@/lib/types";
+import { customers, jobs, restores, servers, users } from "@/lib/mock-data";
+import type { Customer, ManagedUser, ProtectedServer, ProtectionJob, RestoreRequest } from "@/lib/types";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -8,13 +8,15 @@ export type ControlPlaneStore = {
   servers: ProtectedServer[];
   jobs: ProtectionJob[];
   restores: RestoreRequest[];
+  users: ManagedUser[];
 };
 
 const fallbackStore: ControlPlaneStore = {
   customers,
   servers,
   jobs,
-  restores
+  restores,
+  users
 };
 
 export async function getControlPlaneStore(): Promise<ControlPlaneStore> {
@@ -28,12 +30,14 @@ export async function getControlPlaneStore(): Promise<ControlPlaneStore> {
     customersResult,
     serversResult,
     jobsResult,
-    restoresResult
+    restoresResult,
+    usersResult
   ] = await Promise.all([
     supabase.from("customers").select("id,name,mode,created_at"),
     supabase.from("protected_servers").select("id,customer_id,hostname,address,kind,agent_status,last_seen_at,repository:repositories(name)"),
     supabase.from("protection_jobs").select("id,customer_id,name,action,schedule_cron,policy,enabled,created_at"),
-    supabase.from("restore_requests").select("id,customer_id,server_id,restore_point,target,status,created_at")
+    supabase.from("restore_requests").select("id,customer_id,server_id,restore_point,target,status,created_at"),
+    supabase.from("managed_users").select("id,customer_id,name,email,role,status,last_seen_at,created_at")
   ]);
 
   if (customersResult.error) {
@@ -97,10 +101,21 @@ export async function getControlPlaneStore(): Promise<ControlPlaneStore> {
     requestedAt: new Date(restore.created_at).toLocaleString()
   }));
 
+  const mappedUsers: ManagedUser[] = (usersResult.data ?? []).map((user) => ({
+    id: user.id,
+    customerId: user.customer_id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    status: user.status,
+    lastSeen: user.last_seen_at ? new Date(user.last_seen_at).toLocaleString() : "Never"
+  }));
+
   return {
     customers: mappedCustomers,
     servers: mappedServers,
     jobs: mappedJobs,
-    restores: mappedRestores
+    restores: mappedRestores,
+    users: mappedUsers
   };
 }

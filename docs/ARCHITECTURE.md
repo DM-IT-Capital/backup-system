@@ -1,4 +1,4 @@
-# Backup System Architecture
+# Antarex Backup Control Architecture
 
 This project is designed as a Veeam-like backup control plane with separate execution workers.
 

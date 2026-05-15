@@ -1,4 +1,4 @@
-import type { Customer, ProtectedServer, ProtectionJob, RestoreRequest } from "@/lib/types";
+import type { Customer, ManagedUser, ProtectedServer, ProtectionJob, RestoreRequest } from "@/lib/types";
 
 export const customers: Customer[] = [
   {
@@ -105,5 +105,35 @@ export const restores: RestoreRequest[] = [
     target: "Sandbox network",
     status: "queued",
     requestedAt: "Today"
+  }
+];
+
+export const users: ManagedUser[] = [
+  {
+    id: "user-owner-apex",
+    customerId: "cust-apex",
+    name: "Apex Backup Admin",
+    email: "admin@apex.example",
+    role: "owner",
+    status: "active",
+    lastSeen: "15 min ago"
+  },
+  {
+    id: "user-ops-apex",
+    customerId: "cust-apex",
+    name: "Operations Team",
+    email: "ops@apex.example",
+    role: "operator",
+    status: "active",
+    lastSeen: "1 hr ago"
+  },
+  {
+    id: "user-viewer-northwind",
+    customerId: "cust-northwind",
+    name: "Clinic Viewer",
+    email: "viewer@northwind.example",
+    role: "viewer",
+    status: "invited",
+    lastSeen: "Never"
   }
 ];

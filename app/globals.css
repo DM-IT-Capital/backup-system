@@ -271,7 +271,7 @@ h3 {
 
 .table-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.4fr) 130px 90px 110px;
+  grid-template-columns: minmax(180px, 1.4fr) 130px 90px 110px 180px;
   align-items: center;
   gap: 12px;
   padding: 14px 18px;
@@ -340,6 +340,21 @@ h3 {
 
 .pill-idle,
 .agent-not_installed {
+  background: #edf2f7;
+  color: var(--muted);
+}
+
+.user-active {
+  background: #dff7e7;
+  color: var(--success);
+}
+
+.user-invited {
+  background: #dbeafe;
+  color: var(--accent);
+}
+
+.user-disabled {
   background: #edf2f7;
   color: var(--muted);
 }
@@ -422,11 +437,29 @@ h3 {
 .job-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
+  justify-content: flex-end;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .row-action {
   min-height: 34px;
+}
+
+.ghost.danger {
+  border-color: #f3b6b1;
+  color: var(--danger);
+}
+
+.ghost.danger:hover {
+  background: #fff1f0;
 }
 
 .modal-backdrop {
@@ -627,6 +660,26 @@ h3 {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.login-error {
+  color: var(--danger);
+}
+
+.setup-box {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #f6d7a7;
+  border-radius: 8px;
+  background: #fff8eb;
+  color: #68430d;
+  font-size: 13px;
+}
+
+.setup-box strong,
+.setup-box span {
+  display: block;
 }
 
 @media (max-width: 1080px) {

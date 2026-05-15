@@ -8,6 +8,10 @@ export type JobStatus = "idle" | "queued" | "running" | "warning" | "failed" | "
 
 export type AgentStatus = "not_installed" | "installing" | "online" | "offline" | "error";
 
+export type UserRole = "owner" | "admin" | "operator" | "viewer";
+
+export type UserStatus = "active" | "invited" | "disabled";
+
 export type Customer = {
   id: string;
   name: string;
@@ -48,4 +52,14 @@ export type RestoreRequest = {
   target: string;
   status: JobStatus;
   requestedAt: string;
+};
+
+export type ManagedUser = {
+  id: string;
+  customerId: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  status: UserStatus;
+  lastSeen: string;
 };

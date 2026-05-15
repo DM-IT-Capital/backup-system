@@ -7,17 +7,32 @@ import type {
   Customer,
   DeploymentMode,
   JobStatus,
+  ManagedUser,
   ProtectedServer,
   ProtectionAction,
   ProtectionJob,
   RestoreRequest,
-  ServerKind
+  ServerKind,
+  UserRole,
+  UserStatus
 } from "@/lib/types";
 
-type View = "overview" | "customers" | "servers" | "jobs" | "restore";
-type Modal = "customer" | "server" | "job" | "restore" | "deploy" | null;
+type View = "overview" | "customers" | "users" | "servers" | "jobs" | "restore";
+type Modal =
+  | "customer"
+  | "editCustomer"
+  | "user"
+  | "editUser"
+  | "server"
+  | "editServer"
+  | "job"
+  | "editJob"
+  | "restore"
+  | "editRestore"
+  | "deploy"
+  | null;
 
-const storageKey = "backup-control-state-v1";
+const storageKey = "antarex-backup-control-state-v1";
 
 const statusLabels: Record<JobStatus, string> = {
   idle: "Idle",
@@ -31,6 +46,7 @@ const statusLabels: Record<JobStatus, string> = {
 const navItems: { href: string; label: string; view: View }[] = [
   { href: "/", label: "Overview", view: "overview" },
   { href: "/customers", label: "Customers", view: "customers" },
+  { href: "/users", label: "Users", view: "users" },
   { href: "/servers", label: "Servers", view: "servers" },
   { href: "/jobs", label: "Jobs", view: "jobs" },
   { href: "/restore", label: "Restore", view: "restore" }
@@ -64,7 +80,11 @@ export function ControlPlane({
 }) {
   const [store, setStore] = useState<Store>(initialStore);
   const [modal, setModal] = useState<Modal>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<string>(initialStore.customers[0]?.id ?? "");
+  const [selectedUser, setSelectedUser] = useState<string>(initialStore.users[0]?.id ?? "");
   const [selectedServer, setSelectedServer] = useState<string>(initialStore.servers[0]?.id ?? "");
+  const [selectedJob, setSelectedJob] = useState<string>(initialStore.jobs[0]?.id ?? "");
+  const [selectedRestore, setSelectedRestore] = useState<string>(initialStore.restores[0]?.id ?? "");
   const [message, setMessage] = useState("Ready");
 
   useEffect(() => {
@@ -97,6 +117,11 @@ export function ControlPlane({
   const protectedCount = store.customers.reduce((sum, customer) => sum + customer.protectedServers, 0);
   const runningJobs = store.jobs.filter((job) => job.status === "running").length;
   const warningCustomers = store.customers.filter((customer) => customer.health === "warning").length;
+  const activeCustomer = store.customers.find((customer) => customer.id === selectedCustomer);
+  const activeUser = store.users.find((user) => user.id === selectedUser);
+  const activeServer = store.servers.find((server) => server.id === selectedServer);
+  const activeJob = store.jobs.find((job) => job.id === selectedJob);
+  const activeRestore = store.restores.find((restore) => restore.id === selectedRestore);
 
   function addCustomer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -113,6 +138,62 @@ export function ControlPlane({
     setStore((current) => ({ ...current, customers: [customer, ...current.customers] }));
     void postJson("/api/customers", customer);
     setMessage(`Customer ${customer.name} created`);
+    setModal(null);
+  }
+
+  function editCustomer(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const updated: Customer = {
+      ...(activeCustomer as Customer),
+      name: String(form.get("name")),
+      mode: String(form.get("mode")) as DeploymentMode,
+      sites: Number(form.get("sites"))
+    };
+    setStore((current) => ({
+      ...current,
+      customers: current.customers.map((customer) => (customer.id === updated.id ? updated : customer))
+    }));
+    void patchJson(`/api/customers/${updated.id}`, updated);
+    setMessage(`Customer ${updated.name} updated`);
+    setModal(null);
+  }
+
+  function inviteUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const user: ManagedUser = {
+      id: makeId("user"),
+      customerId: String(form.get("customerId")),
+      name: String(form.get("name")),
+      email: String(form.get("email")),
+      role: String(form.get("role")) as UserRole,
+      status: "invited",
+      lastSeen: "Never"
+    };
+    setStore((current) => ({ ...current, users: [user, ...current.users] }));
+    void postJson("/api/users", user);
+    setMessage(`Invitation queued for ${user.email}`);
+    setModal(null);
+  }
+
+  function editUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const updated: ManagedUser = {
+      ...(activeUser as ManagedUser),
+      customerId: String(form.get("customerId")),
+      name: String(form.get("name")),
+      email: String(form.get("email")),
+      role: String(form.get("role")) as UserRole,
+      status: String(form.get("status")) as UserStatus
+    };
+    setStore((current) => ({
+      ...current,
+      users: current.users.map((user) => (user.id === updated.id ? updated : user))
+    }));
+    void patchJson(`/api/users/${updated.id}`, updated);
+    setMessage(`User ${updated.email} updated`);
     setModal(null);
   }
 
@@ -145,6 +226,26 @@ export function ControlPlane({
     setModal(null);
   }
 
+  function editServer(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const updated: ProtectedServer = {
+      ...(activeServer as ProtectedServer),
+      customerId: String(form.get("customerId")),
+      hostname: String(form.get("hostname")),
+      address: String(form.get("address")),
+      kind: String(form.get("kind")) as ServerKind,
+      repository: String(form.get("repository"))
+    };
+    setStore((current) => ({
+      ...current,
+      servers: current.servers.map((server) => (server.id === updated.id ? updated : server))
+    }));
+    void patchJson(`/api/servers/${updated.id}`, updated);
+    setMessage(`Server ${updated.hostname} updated`);
+    setModal(null);
+  }
+
   function createJob(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -165,6 +266,27 @@ export function ControlPlane({
     setModal(null);
   }
 
+  function editJob(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const updated: ProtectionJob = {
+      ...(activeJob as ProtectionJob),
+      customerId: String(form.get("customerId")),
+      name: String(form.get("name")),
+      action: String(form.get("action")) as ProtectionAction,
+      schedule: String(form.get("schedule")),
+      target: String(form.get("target")),
+      rpo: String(form.get("rpo"))
+    };
+    setStore((current) => ({
+      ...current,
+      jobs: current.jobs.map((job) => (job.id === updated.id ? updated : job))
+    }));
+    void patchJson(`/api/jobs/${updated.id}`, updated);
+    setMessage(`Job ${updated.name} updated`);
+    setModal(null);
+  }
+
   function startRestore(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -180,6 +302,25 @@ export function ControlPlane({
     setStore((current) => ({ ...current, restores: [restore, ...current.restores] }));
     void postJson("/api/restores", restore);
     setMessage("Restore request queued");
+    setModal(null);
+  }
+
+  function editRestore(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const updated: RestoreRequest = {
+      ...(activeRestore as RestoreRequest),
+      customerId: String(form.get("customerId")),
+      serverId: String(form.get("serverId")),
+      restorePoint: String(form.get("restorePoint")),
+      target: String(form.get("target"))
+    };
+    setStore((current) => ({
+      ...current,
+      restores: current.restores.map((restore) => (restore.id === updated.id ? updated : restore))
+    }));
+    void patchJson(`/api/restores/${updated.id}`, updated);
+    setMessage("Restore request updated");
     setModal(null);
   }
 
@@ -219,13 +360,82 @@ export function ControlPlane({
     setMessage("Restore workflow started");
   }
 
+  function deleteCustomer(customer: Customer) {
+    if (!window.confirm(`Delete customer ${customer.name}? This also removes local servers, jobs, and restores for that customer.`)) {
+      return;
+    }
+    setStore((current) => ({
+      customers: current.customers.filter((item) => item.id !== customer.id),
+      servers: current.servers.filter((server) => server.customerId !== customer.id),
+      jobs: current.jobs.filter((job) => job.customerId !== customer.id),
+      restores: current.restores.filter((restore) => restore.customerId !== customer.id),
+      users: current.users.filter((user) => user.customerId !== customer.id)
+    }));
+    void deleteJson(`/api/customers/${customer.id}`);
+    setMessage(`Customer ${customer.name} deleted`);
+  }
+
+  function deleteServer(server: ProtectedServer) {
+    if (!window.confirm(`Delete server ${server.hostname}?`)) {
+      return;
+    }
+    setStore((current) => ({
+      ...current,
+      servers: current.servers.filter((item) => item.id !== server.id),
+      restores: current.restores.filter((restore) => restore.serverId !== server.id),
+      customers: current.customers.map((customer) =>
+        customer.id === server.customerId
+          ? { ...customer, protectedServers: Math.max(0, customer.protectedServers - 1) }
+          : customer
+      )
+    }));
+    void deleteJson(`/api/servers/${server.id}`);
+    setMessage(`Server ${server.hostname} deleted`);
+  }
+
+  function deleteUser(user: ManagedUser) {
+    if (!window.confirm(`Remove user ${user.email}?`)) {
+      return;
+    }
+    setStore((current) => ({
+      ...current,
+      users: current.users.filter((item) => item.id !== user.id)
+    }));
+    void deleteJson(`/api/users/${user.id}`);
+    setMessage(`User ${user.email} removed`);
+  }
+
+  function deleteJob(job: ProtectionJob) {
+    if (!window.confirm(`Delete job ${job.name}?`)) {
+      return;
+    }
+    setStore((current) => ({
+      ...current,
+      jobs: current.jobs.filter((item) => item.id !== job.id)
+    }));
+    void deleteJson(`/api/jobs/${job.id}`);
+    setMessage(`Job ${job.name} deleted`);
+  }
+
+  function deleteRestore(restore: RestoreRequest) {
+    if (!window.confirm(`Delete restore request for ${serverName.get(restore.serverId) ?? "this server"}?`)) {
+      return;
+    }
+    setStore((current) => ({
+      ...current,
+      restores: current.restores.filter((item) => item.id !== restore.id)
+    }));
+    void deleteJson(`/api/restores/${restore.id}`);
+    setMessage("Restore request deleted");
+  }
+
   return (
     <main className="shell">
       <aside className="sidebar">
         <a className="brand brand-link" href="/">
           <span className="brand-mark">B</span>
           <div>
-            <strong>Backup Control</strong>
+            <strong>Antarex Backup Control</strong>
             <span>Cloud and on-prem</span>
           </div>
         </a>
@@ -289,6 +499,7 @@ export function ControlPlane({
                   <span>Mode</span>
                   <span>Servers</span>
                   <span>Health</span>
+                  <span>Actions</span>
                 </div>
                 {store.customers.map((customer) => (
                   <div className="table-row" key={customer.id}>
@@ -299,11 +510,70 @@ export function ControlPlane({
                     <span>{customer.mode === "cloud" ? "Cloud managed" : "On-prem only"}</span>
                     <span>{customer.protectedServers}</span>
                     <span className={statusClass(customer.health)}>{statusLabels[customer.health]}</span>
+                    <span className="row-actions">
+                      <button
+                        type="button"
+                        className="ghost row-action"
+                        onClick={() => {
+                          setSelectedCustomer(customer.id);
+                          setModal("editCustomer");
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button type="button" className="ghost danger" onClick={() => deleteCustomer(customer)}>
+                        Delete
+                      </button>
+                    </span>
                   </div>
                 ))}
               </div>
             </section>
           </>
+        )}
+
+        {(initialView === "overview" || initialView === "users") && (
+          <section className="panel page-panel">
+            <div className="panel-head">
+              <h2>User management</h2>
+              <button type="button" className="ghost" onClick={() => setModal("user")}>Invite user</button>
+            </div>
+            <div className="table">
+              <div className="table-row user-table-row table-head">
+                <span>User</span>
+                <span>Customer</span>
+                <span>Role</span>
+                <span>Status</span>
+                <span>Actions</span>
+              </div>
+              {store.users.map((user) => (
+                <div className="table-row user-table-row" key={user.id}>
+                  <span>
+                    <strong>{user.name}</strong>
+                    <small>{user.email} - last seen {user.lastSeen}</small>
+                  </span>
+                  <span>{customerName.get(user.customerId) ?? "Unassigned"}</span>
+                  <span>{user.role}</span>
+                  <span className={`pill user-${user.status}`}>{user.status}</span>
+                  <span className="row-actions">
+                    <button
+                      type="button"
+                      className="ghost row-action"
+                      onClick={() => {
+                        setSelectedUser(user.id);
+                        setModal("editUser");
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button type="button" className="ghost danger" onClick={() => deleteUser(user)}>
+                      Delete
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
         )}
 
         {(initialView === "overview" || initialView === "servers") && (
@@ -332,6 +602,21 @@ export function ControlPlane({
                   >
                     Deploy agent
                   </button>
+                  <span className="row-actions">
+                    <button
+                      type="button"
+                      className="ghost row-action"
+                      onClick={() => {
+                        setSelectedServer(server.id);
+                        setModal("editServer");
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button type="button" className="ghost danger" onClick={() => deleteServer(server)}>
+                      Delete
+                    </button>
+                  </span>
                 </article>
               ))}
             </div>
@@ -355,6 +640,19 @@ export function ControlPlane({
                   <div className="job-actions">
                     <span className={statusClass(job.status)}>{statusLabels[job.status]}</span>
                     <button type="button" className="ghost" onClick={() => runJob(job.id)}>Run now</button>
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => {
+                        setSelectedJob(job.id);
+                        setModal("editJob");
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button type="button" className="ghost danger" onClick={() => deleteJob(job)}>
+                      Delete
+                    </button>
                   </div>
                 </article>
               ))}
@@ -379,6 +677,19 @@ export function ControlPlane({
                   <div className="job-actions">
                     <span className={statusClass(restore.status)}>{statusLabels[restore.status]}</span>
                     <button type="button" className="ghost" onClick={() => markRestoreRunning(restore.id)}>Start</button>
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => {
+                        setSelectedRestore(restore.id);
+                        setModal("editRestore");
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button type="button" className="ghost danger" onClick={() => deleteRestore(restore)}>
+                      Delete
+                    </button>
                   </div>
                 </article>
               ))}
@@ -395,9 +706,15 @@ export function ControlPlane({
               <button type="button" className="ghost" onClick={() => setModal(null)}>Close</button>
             </div>
             {modal === "customer" && <CustomerForm onSubmit={addCustomer} />}
+            {modal === "editCustomer" && activeCustomer && <CustomerForm customer={activeCustomer} onSubmit={editCustomer} />}
+            {modal === "user" && <UserForm customers={store.customers} onSubmit={inviteUser} />}
+            {modal === "editUser" && activeUser && <UserForm customers={store.customers} user={activeUser} onSubmit={editUser} />}
             {modal === "server" && <ServerForm customers={store.customers} onSubmit={addServer} />}
+            {modal === "editServer" && activeServer && <ServerForm customers={store.customers} server={activeServer} onSubmit={editServer} />}
             {modal === "job" && <JobForm customers={store.customers} onSubmit={createJob} />}
+            {modal === "editJob" && activeJob && <JobForm customers={store.customers} job={activeJob} onSubmit={editJob} />}
             {modal === "restore" && <RestoreForm customers={store.customers} servers={store.servers} onSubmit={startRestore} />}
+            {modal === "editRestore" && activeRestore && <RestoreForm customers={store.customers} servers={store.servers} restore={activeRestore} onSubmit={editRestore} />}
             {modal === "deploy" && <DeployForm servers={store.servers} selectedServer={selectedServer} onSubmit={deployAgent} />}
           </div>
         </div>
@@ -420,60 +737,101 @@ async function postJson(path: string, payload: unknown) {
   }
 }
 
+async function patchJson(path: string, payload: unknown) {
+  try {
+    await fetch(path, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  } catch {
+    // Local UI state remains usable if Supabase is not configured yet.
+  }
+}
+
+async function deleteJson(path: string) {
+  try {
+    await fetch(path, { method: "DELETE" });
+  } catch {
+    // Local UI state remains usable if Supabase is not configured yet.
+  }
+}
+
 const modalTitles: Record<Exclude<Modal, null>, string> = {
   customer: "New customer",
+  editCustomer: "Edit customer",
+  user: "Invite user",
+  editUser: "Edit user",
   server: "Add server by IP",
+  editServer: "Edit server",
   job: "Create protection job",
+  editJob: "Edit protection job",
   restore: "Start restore",
+  editRestore: "Edit restore request",
   deploy: "Deploy agent"
 };
 
-function CustomerForm({ onSubmit }: { onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function CustomerForm({ customer, onSubmit }: { customer?: Customer; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   return (
     <form className="modal-form" onSubmit={onSubmit}>
-      <label>Customer name<input name="name" required placeholder="Customer company name" /></label>
-      <label>Deployment mode<select name="mode" defaultValue="cloud"><option value="cloud">Cloud managed</option><option value="onprem">On-prem only</option></select></label>
-      <label>Sites<input name="sites" type="number" min="1" defaultValue="1" required /></label>
-      <button className="button primary" type="submit">Create customer</button>
+      <label>Customer name<input name="name" required placeholder="Customer company name" defaultValue={customer?.name} /></label>
+      <label>Deployment mode<select name="mode" defaultValue={customer?.mode ?? "cloud"}><option value="cloud">Cloud managed</option><option value="onprem">On-prem only</option></select></label>
+      <label>Sites<input name="sites" type="number" min="1" defaultValue={customer?.sites ?? 1} required /></label>
+      <button className="button primary" type="submit">{customer ? "Save customer" : "Create customer"}</button>
     </form>
   );
 }
 
-function ServerForm({ customers, onSubmit }: { customers: Customer[]; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function UserForm({ customers, user, onSubmit }: { customers: Customer[]; user?: ManagedUser; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   return (
     <form className="modal-form" onSubmit={onSubmit}>
-      <label>Customer<SelectCustomer customers={customers} /></label>
-      <label>Hostname<input name="hostname" required placeholder="sql-prod-01" /></label>
-      <label>IP address<input name="address" required placeholder="10.10.10.25" pattern="^([0-9]{1,3}\.){3}[0-9]{1,3}$" /></label>
-      <label>Server type<select name="kind" defaultValue="windows"><option value="windows">Windows</option><option value="linux">Linux</option><option value="esxi">ESXi</option><option value="hyperv">Hyper-V</option><option value="proxmox">Proxmox</option><option value="generic">Generic</option></select></label>
-      <label>Repository<input name="repository" required placeholder="Local repository A" /></label>
-      <button className="button primary" type="submit">Add and deploy agent</button>
+      <label>Customer<SelectCustomer customers={customers} defaultValue={user?.customerId} /></label>
+      <label>Name<input name="name" required placeholder="User full name" defaultValue={user?.name} /></label>
+      <label>Email<input name="email" type="email" required placeholder="user@company.com" defaultValue={user?.email} /></label>
+      <label>Role<select name="role" defaultValue={user?.role ?? "operator"}><option value="owner">Owner</option><option value="admin">Admin</option><option value="operator">Operator</option><option value="viewer">Viewer</option></select></label>
+      {user && (
+        <label>Status<select name="status" defaultValue={user.status}><option value="active">Active</option><option value="invited">Invited</option><option value="disabled">Disabled</option></select></label>
+      )}
+      <button className="button primary" type="submit">{user ? "Save user" : "Invite user"}</button>
     </form>
   );
 }
 
-function JobForm({ customers, onSubmit }: { customers: Customer[]; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function ServerForm({ customers, server, onSubmit }: { customers: Customer[]; server?: ProtectedServer; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   return (
     <form className="modal-form" onSubmit={onSubmit}>
-      <label>Customer<SelectCustomer customers={customers} /></label>
-      <label>Job name<input name="name" required placeholder="Production backup" /></label>
-      <label>Action<select name="action" defaultValue="backup"><option value="backup">Backup</option><option value="replicate">Replicate</option><option value="restore">Restore test</option></select></label>
-      <label>Target<input name="target" required placeholder="vSphere cluster or server group" /></label>
-      <label>Schedule<input name="schedule" required placeholder="Every 4 hours" /></label>
-      <label>RPO<input name="rpo" required placeholder="4h" /></label>
-      <button className="button primary" type="submit">Queue job</button>
+      <label>Customer<SelectCustomer customers={customers} defaultValue={server?.customerId} /></label>
+      <label>Hostname<input name="hostname" required placeholder="sql-prod-01" defaultValue={server?.hostname} /></label>
+      <label>IP address<input name="address" required placeholder="10.10.10.25" pattern="^([0-9]{1,3}\.){3}[0-9]{1,3}$" defaultValue={server?.address} /></label>
+      <label>Server type<select name="kind" defaultValue={server?.kind ?? "windows"}><option value="windows">Windows</option><option value="linux">Linux</option><option value="esxi">ESXi</option><option value="hyperv">Hyper-V</option><option value="proxmox">Proxmox</option><option value="generic">Generic</option></select></label>
+      <label>Repository<input name="repository" required placeholder="Local repository A" defaultValue={server?.repository} /></label>
+      <button className="button primary" type="submit">{server ? "Save server" : "Add and deploy agent"}</button>
     </form>
   );
 }
 
-function RestoreForm({ customers, servers, onSubmit }: { customers: Customer[]; servers: ProtectedServer[]; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function JobForm({ customers, job, onSubmit }: { customers: Customer[]; job?: ProtectionJob; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   return (
     <form className="modal-form" onSubmit={onSubmit}>
-      <label>Customer<SelectCustomer customers={customers} /></label>
-      <label>Server<select name="serverId" required>{servers.map((server) => <option value={server.id} key={server.id}>{server.hostname}</option>)}</select></label>
-      <label>Restore point<select name="restorePoint" defaultValue="Latest successful backup"><option>Latest successful backup</option><option>Last night backup</option><option>Manual restore point</option></select></label>
-      <label>Restore target<input name="target" required placeholder="Original server or sandbox network" /></label>
-      <button className="button primary" type="submit">Queue restore</button>
+      <label>Customer<SelectCustomer customers={customers} defaultValue={job?.customerId} /></label>
+      <label>Job name<input name="name" required placeholder="Production backup" defaultValue={job?.name} /></label>
+      <label>Action<select name="action" defaultValue={job?.action ?? "backup"}><option value="backup">Backup</option><option value="replicate">Replicate</option><option value="restore">Restore test</option></select></label>
+      <label>Target<input name="target" required placeholder="vSphere cluster or server group" defaultValue={job?.target} /></label>
+      <label>Schedule<input name="schedule" required placeholder="Every 4 hours" defaultValue={job?.schedule} /></label>
+      <label>RPO<input name="rpo" required placeholder="4h" defaultValue={job?.rpo} /></label>
+      <button className="button primary" type="submit">{job ? "Save job" : "Queue job"}</button>
+    </form>
+  );
+}
+
+function RestoreForm({ customers, servers, restore, onSubmit }: { customers: Customer[]; servers: ProtectedServer[]; restore?: RestoreRequest; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+  return (
+    <form className="modal-form" onSubmit={onSubmit}>
+      <label>Customer<SelectCustomer customers={customers} defaultValue={restore?.customerId} /></label>
+      <label>Server<select name="serverId" required defaultValue={restore?.serverId}>{servers.map((server) => <option value={server.id} key={server.id}>{server.hostname}</option>)}</select></label>
+      <label>Restore point<select name="restorePoint" defaultValue={restore?.restorePoint ?? "Latest successful backup"}><option>Latest successful backup</option><option>Last night backup</option><option>Manual restore point</option></select></label>
+      <label>Restore target<input name="target" required placeholder="Original server or sandbox network" defaultValue={restore?.target} /></label>
+      <button className="button primary" type="submit">{restore ? "Save restore request" : "Queue restore"}</button>
     </form>
   );
 }
@@ -488,9 +846,9 @@ function DeployForm({ servers, selectedServer, onSubmit }: { servers: ProtectedS
   );
 }
 
-function SelectCustomer({ customers }: { customers: Customer[] }) {
+function SelectCustomer({ customers, defaultValue }: { customers: Customer[]; defaultValue?: string }) {
   return (
-    <select name="customerId" required>
+    <select name="customerId" required defaultValue={defaultValue}>
       {customers.map((customer) => (
         <option value={customer.id} key={customer.id}>{customer.name}</option>
       ))}

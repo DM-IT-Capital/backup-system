@@ -1,4 +1,5 @@
 import { signIn } from "@/app/auth/actions";
+import { hasSupabaseConfig } from "@/lib/supabase/config";
 
 type LoginPageProps = {
   searchParams: Promise<{
@@ -9,6 +10,7 @@ type LoginPageProps = {
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
+  const isConfigured = hasSupabaseConfig();
 
   return (
     <main className="login-shell">
@@ -16,7 +18,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         <div className="login-brand">
           <span className="brand-mark">B</span>
           <div>
-            <strong>Backup Control</strong>
+            <strong>Antarex Backup Control</strong>
             <span>Centralized backup, replication, and restore</span>
           </div>
         </div>
@@ -68,8 +70,20 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </button>
 
           <p className={params.error ? "login-note login-error" : "login-note"}>
-            {params.error ?? "Use a Supabase Auth user created in your Supabase project."}
+            {params.error ?? (
+              isConfigured
+                ? "Use a Supabase Auth user created in your Supabase project."
+                : "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel, then redeploy."
+            )}
           </p>
+          {!isConfigured && (
+            <div className="setup-box">
+              <strong>Required before login works</strong>
+              <span>Set `NEXT_PUBLIC_SUPABASE_URL`</span>
+              <span>Set `NEXT_PUBLIC_SUPABASE_ANON_KEY`</span>
+              <span>Create a Supabase Auth user</span>
+            </div>
+          )}
         </form>
       </section>
     </main>
