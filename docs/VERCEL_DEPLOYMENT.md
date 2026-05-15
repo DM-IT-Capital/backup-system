@@ -28,6 +28,16 @@ AGENT_ENROLLMENT_SECRET=
 npm run build
 ```
 
+## Project settings
+
+Use these Vercel project settings:
+
+- Framework Preset: `Next.js`
+- Build Command: `npm run build`
+- Output Directory: `.next`
+
+If the deployment fails with `No Output Directory named "public" found`, the Vercel project is configured as a static site. Change the Output Directory from `public` to `.next`, or clear the setting and let the Next.js preset manage it.
+
 ## Vercel boundary
 
 Keep these workloads outside Vercel:
