@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { customers as seedCustomers, jobs as seedJobs, restores as seedRestores, servers as seedServers } from "@/lib/mock-data";
+import type { ControlPlaneStore } from "@/lib/control-plane-data";
 import type {
   AgentStatus,
   Customer,
@@ -53,36 +53,38 @@ function makeId(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}`;
 }
 
-type Store = {
-  customers: Customer[];
-  servers: ProtectedServer[];
-  jobs: ProtectionJob[];
-  restores: RestoreRequest[];
-};
-
-const initialStore: Store = {
-  customers: seedCustomers,
-  servers: seedServers,
-  jobs: seedJobs,
-  restores: seedRestores
-};
-
-export function ControlPlane({ initialView }: { initialView: View }) {
+export function ControlPlane({
+  initialView,
+  initialStore,
+  enableLocalPersistence
+}: {
+  initialView: View;
+  initialStore: ControlPlaneStore;
+  enableLocalPersistence: boolean;
+}) {
   const [store, setStore] = useState<Store>(initialStore);
   const [modal, setModal] = useState<Modal>(null);
-  const [selectedServer, setSelectedServer] = useState<string>(seedServers[0]?.id ?? "");
+  const [selectedServer, setSelectedServer] = useState<string>(initialStore.servers[0]?.id ?? "");
   const [message, setMessage] = useState("Ready");
 
   useEffect(() => {
+    if (!enableLocalPersistence) {
+      return;
+    }
+
     const saved = window.localStorage.getItem(storageKey);
     if (saved) {
       setStore(JSON.parse(saved) as Store);
     }
-  }, []);
+  }, [enableLocalPersistence]);
 
   useEffect(() => {
+    if (!enableLocalPersistence) {
+      return;
+    }
+
     window.localStorage.setItem(storageKey, JSON.stringify(store));
-  }, [store]);
+  }, [enableLocalPersistence, store]);
 
   const customerName = useMemo(() => {
     return new Map(store.customers.map((customer) => [customer.id, customer.name]));
@@ -109,6 +111,7 @@ export function ControlPlane({ initialView }: { initialView: View }) {
       health: "idle"
     };
     setStore((current) => ({ ...current, customers: [customer, ...current.customers] }));
+    void postJson("/api/customers", customer);
     setMessage(`Customer ${customer.name} created`);
     setModal(null);
   }
@@ -136,6 +139,7 @@ export function ControlPlane({ initialView }: { initialView: View }) {
           : customer
       )
     }));
+    void postJson("/api/servers", server);
     setSelectedServer(server.id);
     setMessage(`Server ${server.hostname} queued for agent deployment`);
     setModal(null);
@@ -156,6 +160,7 @@ export function ControlPlane({ initialView }: { initialView: View }) {
       rpo: String(form.get("rpo"))
     };
     setStore((current) => ({ ...current, jobs: [job, ...current.jobs] }));
+    void postJson("/api/jobs", job);
     setMessage(`${action} job ${job.name} queued`);
     setModal(null);
   }
@@ -173,6 +178,7 @@ export function ControlPlane({ initialView }: { initialView: View }) {
       requestedAt: nowLabel()
     };
     setStore((current) => ({ ...current, restores: [restore, ...current.restores] }));
+    void postJson("/api/restores", restore);
     setMessage("Restore request queued");
     setModal(null);
   }
@@ -188,6 +194,7 @@ export function ControlPlane({ initialView }: { initialView: View }) {
         server.id === serverId ? { ...server, agentStatus: status, lastSeen: status === "online" ? "Just now" : "Deployment queued" } : server
       )
     }));
+    void postJson(`/api/servers/${serverId}/agent`, { agentStatus: status });
     setMessage("Agent deployment command sent");
     setModal(null);
   }
@@ -197,6 +204,7 @@ export function ControlPlane({ initialView }: { initialView: View }) {
       ...current,
       jobs: current.jobs.map((job) => (job.id === jobId ? { ...job, status: "running" } : job))
     }));
+    void postJson(`/api/jobs/${jobId}/run`, {});
     setMessage("Job run started");
   }
 
@@ -207,6 +215,7 @@ export function ControlPlane({ initialView }: { initialView: View }) {
         restore.id === restoreId ? { ...restore, status: "running" } : restore
       )
     }));
+    void postJson(`/api/restores/${restoreId}/start`, {});
     setMessage("Restore workflow started");
   }
 
@@ -226,7 +235,7 @@ export function ControlPlane({ initialView }: { initialView: View }) {
               {item.label}
             </a>
           ))}
-          <a href="/login">Login</a>
+          <a href="/auth/signout">Sign out</a>
         </nav>
       </aside>
 
@@ -240,7 +249,7 @@ export function ControlPlane({ initialView }: { initialView: View }) {
           <div className="actions">
             <button type="button" className="button secondary" onClick={() => setModal("server")}>Add server by IP</button>
             <button type="button" className="button primary" onClick={() => setModal("job")}>Create job</button>
-            <a className="button secondary" href="/login">Login</a>
+            <a className="button secondary" href="/auth/signout">Sign out</a>
           </div>
         </header>
 
@@ -395,6 +404,20 @@ export function ControlPlane({ initialView }: { initialView: View }) {
       )}
     </main>
   );
+}
+
+type Store = ControlPlaneStore;
+
+async function postJson(path: string, payload: unknown) {
+  try {
+    await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  } catch {
+    // Local UI state remains usable if Supabase is not configured yet.
+  }
 }
 
 const modalTitles: Record<Exclude<Modal, null>, string> = {

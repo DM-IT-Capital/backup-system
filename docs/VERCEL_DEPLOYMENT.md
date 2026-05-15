@@ -12,8 +12,9 @@ This repository is ready to deploy the web control plane to Vercel after depende
 
 1. Create a Supabase project.
 2. Run `docs/SUPABASE_SCHEMA.sql` in the Supabase SQL editor.
-3. Create a Vercel project from this repository.
-4. Add these Vercel environment variables:
+3. Create at least one Supabase Auth user.
+4. Create a Vercel project from this repository.
+5. Add these Vercel environment variables:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
@@ -22,7 +23,7 @@ SUPABASE_SERVICE_ROLE_KEY=
 AGENT_ENROLLMENT_SECRET=
 ```
 
-5. Deploy with the default Next.js build command:
+6. Deploy with the default Next.js build command:
 
 ```bash
 npm run build

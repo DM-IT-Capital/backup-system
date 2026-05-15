@@ -1,20 +1,14 @@
-"use client";
+import { signIn } from "@/app/auth/actions";
 
-import { FormEvent, useState } from "react";
+type LoginPageProps = {
+  searchParams: Promise<{
+    error?: string;
+    next?: string;
+  }>;
+};
 
-export default function LoginPage() {
-  const [message, setMessage] = useState("Use any email and password for demo access.");
-
-  function signIn(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const email = String(form.get("email"));
-    window.localStorage.setItem("backup-control-session", JSON.stringify({ email, signedInAt: new Date().toISOString() }));
-    setMessage(`Signed in as ${email}. Redirecting to dashboard...`);
-    window.setTimeout(() => {
-      window.location.href = "/";
-    }, 600);
-  }
+export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const params = await searchParams;
 
   return (
     <main className="login-shell">
@@ -44,7 +38,8 @@ export default function LoginPage() {
       </section>
 
       <section className="login-panel" aria-label="Sign in form">
-        <form className="login-form" onSubmit={signIn}>
+        <form className="login-form" action={signIn}>
+          <input type="hidden" name="next" value={params.next ?? "/"} />
           <div>
             <p className="eyebrow">Welcome back</p>
             <h2>Sign in</h2>
@@ -72,7 +67,9 @@ export default function LoginPage() {
             Sign in to dashboard
           </button>
 
-          <p className="login-note">{message}</p>
+          <p className={params.error ? "login-note login-error" : "login-note"}>
+            {params.error ?? "Use a Supabase Auth user created in your Supabase project."}
+          </p>
         </form>
       </section>
     </main>
