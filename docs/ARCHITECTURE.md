@@ -34,11 +34,31 @@ Those operations must run inside the customer environment through an on-prem gat
 
 ## Job flow
 
-1. User creates a backup, replication, or restore job.
+1. User creates one operation and selects backup, replication, or restore.
 2. API saves job definition and creates one or more job runs.
 3. Gateway polls for commands or receives a realtime notification.
 4. Gateway executes the job locally and streams progress events.
-5. Supabase stores run state, logs, restore points, and audit events.
+5. Supabase stores run state, network throughput, progress, bottleneck, logs, restore points, and audit events.
+
+## Replication flow
+
+Replication is executed by the on-prem gateway, not by Vercel. A replication operation should define source workload, target site/gateway, target datastore/repository, network mapping, retention, and RPO. The gateway reads changed data from the source, transfers it to the target repository or hypervisor, and reports throughput and lag back to the cloud control plane.
+
+## Server discovery and agent install
+
+Adding a server IP must not mark the agent online. The correct state flow is:
+
+1. `unknown`: IP was added, not checked yet.
+2. `checking`: gateway is testing reachability.
+3. `reachable`: gateway can connect by SSH, WinRM, or hypervisor API.
+4. `installing`: agent installation command was sent.
+5. `online`: installed agent has heartbeated successfully.
+
+The UI should only show an agent as online after the real agent heartbeat is received.
+
+## Repositories
+
+Repositories are backup storage targets. They can be local disk, NAS/SMB, S3-compatible storage, Azure Blob, or Google Cloud Storage. Backup and replication operations should select a repository, and restore operations should select from restore points stored in a repository.
 
 ## Hypervisor support path
 

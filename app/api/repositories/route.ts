@@ -14,14 +14,18 @@ export async function POST(request: Request) {
   }
 
   const { data, error } = await supabase
-    .from("managed_users")
+    .from("repositories")
     .insert({
-      account_type: payload.accountType,
-      customer_id: payload.accountType === "platform_admin" ? null : payload.customerId,
+      customer_id: payload.customerId,
       name: payload.name,
-      email: payload.email,
-      role: payload.role,
-      status: "invited"
+      repository_type: payload.type,
+      config: {
+        location: payload.location,
+        capacityGb: payload.capacityGb,
+        usedGb: payload.usedGb ?? 0,
+        immutable: payload.immutable,
+        status: payload.status ?? "idle"
+      }
     })
     .select("id")
     .single();

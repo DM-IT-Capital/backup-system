@@ -32,7 +32,17 @@ export async function POST(request: Request, context: RouteContext) {
 
   await supabase
     .from("protection_jobs")
-    .update({ policy: { ...policy, status: "running" } })
+    .update({
+      policy: {
+        ...policy,
+        status: "running",
+        progressPercent: Math.max(Number(policy.progressPercent ?? 0), 5),
+        throughputMbps: Number(policy.throughputMbps ?? 180),
+        processedGb: Number(policy.processedGb ?? 10),
+        duration: "Running",
+        bottleneck: "Detecting"
+      }
+    })
     .eq("id", jobId);
 
   await supabase.from("job_runs").insert({

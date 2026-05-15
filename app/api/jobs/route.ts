@@ -47,7 +47,13 @@ export async function POST(request: Request) {
       policy: {
         target: payload.target,
         rpo: payload.rpo,
-        status: "queued"
+        status: "queued",
+        repositoryId: payload.repository,
+        progressPercent: 0,
+        throughputMbps: 0,
+        processedGb: 0,
+        duration: "0 min",
+        bottleneck: "Pending"
       }
     })
     .select("id")

@@ -20,7 +20,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   const { error } = await supabase
     .from("protected_servers")
-    .update({ agent_status: payload.agentStatus })
+    .update({ agent_status: payload.agentStatus, last_seen_at: null })
     .eq("id", serverId);
 
   if (error) {

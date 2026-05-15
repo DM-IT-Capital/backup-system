@@ -1,5 +1,5 @@
-import { customers, jobs, restores, servers, users } from "@/lib/mock-data";
-import type { Customer, ManagedUser, ProtectedServer, ProtectionJob, RestoreRequest } from "@/lib/types";
+import { customers, jobs, repositories, restores, servers, users } from "@/lib/mock-data";
+import type { BackupRepository, Customer, ManagedUser, ProtectedServer, ProtectionJob, RestoreRequest } from "@/lib/types";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -9,6 +9,7 @@ export type ControlPlaneStore = {
   jobs: ProtectionJob[];
   restores: RestoreRequest[];
   users: ManagedUser[];
+  repositories: BackupRepository[];
 };
 
 const fallbackStore: ControlPlaneStore = {
@@ -16,7 +17,8 @@ const fallbackStore: ControlPlaneStore = {
   servers,
   jobs,
   restores,
-  users
+  users,
+  repositories
 };
 
 export async function getControlPlaneStore(): Promise<ControlPlaneStore> {
@@ -31,13 +33,15 @@ export async function getControlPlaneStore(): Promise<ControlPlaneStore> {
     serversResult,
     jobsResult,
     restoresResult,
-    usersResult
+    usersResult,
+    repositoriesResult
   ] = await Promise.all([
     supabase.from("customers").select("id,name,mode,created_at"),
     supabase.from("protected_servers").select("id,customer_id,hostname,address,kind,agent_status,last_seen_at,repository:repositories(name)"),
     supabase.from("protection_jobs").select("id,customer_id,name,action,schedule_cron,policy,enabled,created_at"),
     supabase.from("restore_requests").select("id,customer_id,server_id,restore_point,target,status,created_at"),
-    supabase.from("managed_users").select("id,customer_id,name,email,role,status,last_seen_at,created_at")
+    supabase.from("managed_users").select("id,account_type,customer_id,name,email,role,status,last_seen_at,created_at"),
+    supabase.from("repositories").select("id,customer_id,name,repository_type,config,created_at")
   ]);
 
   if (customersResult.error) {
@@ -72,6 +76,7 @@ export async function getControlPlaneStore(): Promise<ControlPlaneStore> {
       hostname: server.hostname,
       address: String(server.address),
       kind: server.kind,
+      connectivity: server.last_seen_at ? "reachable" : "unknown",
       agentStatus: server.agent_status,
       lastSeen: server.last_seen_at ? new Date(server.last_seen_at).toLocaleString() : "Never",
       repository: Array.isArray(repository)
@@ -88,7 +93,12 @@ export async function getControlPlaneStore(): Promise<ControlPlaneStore> {
     schedule: job.schedule_cron ?? "Manual",
     target: typeof job.policy?.target === "string" ? job.policy.target : "Unassigned target",
     status: typeof job.policy?.status === "string" ? job.policy.status : "idle",
-    rpo: typeof job.policy?.rpo === "string" ? job.policy.rpo : "Not set"
+    rpo: typeof job.policy?.rpo === "string" ? job.policy.rpo : "Not set",
+    progressPercent: typeof job.policy?.progressPercent === "number" ? job.policy.progressPercent : 0,
+    throughputMbps: typeof job.policy?.throughputMbps === "number" ? job.policy.throughputMbps : 0,
+    processedGb: typeof job.policy?.processedGb === "number" ? job.policy.processedGb : 0,
+    duration: typeof job.policy?.duration === "string" ? job.policy.duration : "0 min",
+    bottleneck: typeof job.policy?.bottleneck === "string" ? job.policy.bottleneck : "None"
   }));
 
   const mappedRestores: RestoreRequest[] = (restoresResult.data ?? []).map((restore) => ({
@@ -103,6 +113,7 @@ export async function getControlPlaneStore(): Promise<ControlPlaneStore> {
 
   const mappedUsers: ManagedUser[] = (usersResult.data ?? []).map((user) => ({
     id: user.id,
+    accountType: user.account_type ?? "customer_user",
     customerId: user.customer_id,
     name: user.name,
     email: user.email,
@@ -111,11 +122,24 @@ export async function getControlPlaneStore(): Promise<ControlPlaneStore> {
     lastSeen: user.last_seen_at ? new Date(user.last_seen_at).toLocaleString() : "Never"
   }));
 
+  const mappedRepositories: BackupRepository[] = (repositoriesResult.data ?? []).map((repository) => ({
+    id: repository.id,
+    customerId: repository.customer_id,
+    name: repository.name,
+    type: repository.repository_type,
+    location: typeof repository.config?.location === "string" ? repository.config.location : "Not configured",
+    capacityGb: typeof repository.config?.capacityGb === "number" ? repository.config.capacityGb : 0,
+    usedGb: typeof repository.config?.usedGb === "number" ? repository.config.usedGb : 0,
+    immutable: Boolean(repository.config?.immutable),
+    status: typeof repository.config?.status === "string" ? repository.config.status : "idle"
+  }));
+
   return {
     customers: mappedCustomers,
     servers: mappedServers,
     jobs: mappedJobs,
     restores: mappedRestores,
-    users: mappedUsers
+    users: mappedUsers,
+    repositories: mappedRepositories
   };
 }

@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       hostname: payload.hostname,
       address: payload.address,
       kind: payload.kind,
-      agent_status: "installing",
+      agent_status: "not_installed",
       repository_id: repository?.id ?? null
     })
     .select("id")

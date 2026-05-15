@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ControlPlaneStore } from "@/lib/control-plane-data";
 import type {
   AgentStatus,
+  BackupRepository,
+  ConnectivityStatus,
   Customer,
   DeploymentMode,
   JobStatus,
@@ -12,12 +14,13 @@ import type {
   ProtectionAction,
   ProtectionJob,
   RestoreRequest,
+  RepositoryType,
   ServerKind,
   UserRole,
   UserStatus
 } from "@/lib/types";
 
-type View = "overview" | "customers" | "users" | "servers" | "jobs" | "restore";
+type View = "overview" | "customers" | "users" | "servers" | "repositories" | "jobs" | "restore";
 type Modal =
   | "customer"
   | "editCustomer"
@@ -25,8 +28,11 @@ type Modal =
   | "editUser"
   | "server"
   | "editServer"
-  | "job"
-  | "editJob"
+  | "operation"
+  | "editOperation"
+  | "jobDetails"
+  | "repository"
+  | "editRepository"
   | "restore"
   | "editRestore"
   | "deploy"
@@ -48,7 +54,8 @@ const navItems: { href: string; label: string; view: View }[] = [
   { href: "/customers", label: "Customers", view: "customers" },
   { href: "/users", label: "Users", view: "users" },
   { href: "/servers", label: "Servers", view: "servers" },
-  { href: "/jobs", label: "Jobs", view: "jobs" },
+  { href: "/repositories", label: "Repositories", view: "repositories" },
+  { href: "/jobs", label: "Operations", view: "jobs" },
   { href: "/restore", label: "Restore", view: "restore" }
 ];
 
@@ -83,6 +90,7 @@ export function ControlPlane({
   const [selectedCustomer, setSelectedCustomer] = useState<string>(initialStore.customers[0]?.id ?? "");
   const [selectedUser, setSelectedUser] = useState<string>(initialStore.users[0]?.id ?? "");
   const [selectedServer, setSelectedServer] = useState<string>(initialStore.servers[0]?.id ?? "");
+  const [selectedRepository, setSelectedRepository] = useState<string>(initialStore.repositories[0]?.id ?? "");
   const [selectedJob, setSelectedJob] = useState<string>(initialStore.jobs[0]?.id ?? "");
   const [selectedRestore, setSelectedRestore] = useState<string>(initialStore.restores[0]?.id ?? "");
   const [message, setMessage] = useState("Ready");
@@ -118,12 +126,16 @@ export function ControlPlane({
   const runningJobs = store.jobs.filter((job) => job.status === "running").length;
   const warningCustomers = store.customers.filter((customer) => customer.health === "warning").length;
   const onlineServers = store.servers.filter((server) => server.agentStatus === "online").length;
+  const reachableServers = store.servers.filter((server) => server.connectivity === "reachable").length;
   const queuedRestores = store.restores.filter((restore) => restore.status === "queued").length;
   const activeUsers = store.users.filter((user) => user.status === "active").length;
+  const repositoryCapacityGb = store.repositories.reduce((sum, repository) => sum + repository.capacityGb, 0);
+  const repositoryUsedGb = store.repositories.reduce((sum, repository) => sum + repository.usedGb, 0);
   const systemHealth = warningCustomers > 0 ? "Attention needed" : "Operational";
   const activeCustomer = store.customers.find((customer) => customer.id === selectedCustomer);
   const activeUser = store.users.find((user) => user.id === selectedUser);
   const activeServer = store.servers.find((server) => server.id === selectedServer);
+  const activeRepository = store.repositories.find((repository) => repository.id === selectedRepository);
   const activeJob = store.jobs.find((job) => job.id === selectedJob);
   const activeRestore = store.restores.find((restore) => restore.id === selectedRestore);
 
@@ -166,9 +178,11 @@ export function ControlPlane({
   function inviteUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const accountType = String(form.get("accountType")) as ManagedUser["accountType"];
     const user: ManagedUser = {
       id: makeId("user"),
-      customerId: String(form.get("customerId")),
+      accountType,
+      customerId: accountType === "platform_admin" ? null : String(form.get("customerId")),
       name: String(form.get("name")),
       email: String(form.get("email")),
       role: String(form.get("role")) as UserRole,
@@ -184,9 +198,11 @@ export function ControlPlane({
   function editUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const accountType = String(form.get("accountType")) as ManagedUser["accountType"];
     const updated: ManagedUser = {
       ...(activeUser as ManagedUser),
-      customerId: String(form.get("customerId")),
+      accountType,
+      customerId: accountType === "platform_admin" ? null : String(form.get("customerId")),
       name: String(form.get("name")),
       email: String(form.get("email")),
       role: String(form.get("role")) as UserRole,
@@ -211,8 +227,9 @@ export function ControlPlane({
       hostname: String(form.get("hostname")),
       address: String(form.get("address")),
       kind: String(form.get("kind")) as ServerKind,
-      agentStatus: "installing",
-      lastSeen: "Discovery queued",
+      connectivity: "unknown",
+      agentStatus: "not_installed",
+      lastSeen: "Not discovered",
       repository: String(form.get("repository"))
     };
     setStore((current) => ({
@@ -250,6 +267,48 @@ export function ControlPlane({
     setModal(null);
   }
 
+  function addRepository(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const repository: BackupRepository = {
+      id: makeId("repo"),
+      customerId: String(form.get("customerId")),
+      name: String(form.get("name")),
+      type: String(form.get("type")) as RepositoryType,
+      location: String(form.get("location")),
+      capacityGb: Number(form.get("capacityGb")),
+      usedGb: 0,
+      immutable: form.get("immutable") === "on",
+      status: "idle"
+    };
+    setStore((current) => ({ ...current, repositories: [repository, ...current.repositories] }));
+    void postJson("/api/repositories", repository);
+    setMessage(`Repository ${repository.name} added`);
+    setModal(null);
+  }
+
+  function editRepository(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const updated: BackupRepository = {
+      ...(activeRepository as BackupRepository),
+      customerId: String(form.get("customerId")),
+      name: String(form.get("name")),
+      type: String(form.get("type")) as RepositoryType,
+      location: String(form.get("location")),
+      capacityGb: Number(form.get("capacityGb")),
+      usedGb: Number(form.get("usedGb")),
+      immutable: form.get("immutable") === "on"
+    };
+    setStore((current) => ({
+      ...current,
+      repositories: current.repositories.map((repository) => (repository.id === updated.id ? updated : repository))
+    }));
+    void patchJson(`/api/repositories/${updated.id}`, updated);
+    setMessage(`Repository ${updated.name} updated`);
+    setModal(null);
+  }
+
   function createJob(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -262,7 +321,12 @@ export function ControlPlane({
       schedule: String(form.get("schedule")),
       target: String(form.get("target")),
       status: "queued",
-      rpo: String(form.get("rpo"))
+      rpo: String(form.get("rpo")),
+      progressPercent: 0,
+      throughputMbps: 0,
+      processedGb: 0,
+      duration: "0 min",
+      bottleneck: "Pending"
     };
     setStore((current) => ({ ...current, jobs: [job, ...current.jobs] }));
     void postJson("/api/jobs", job);
@@ -333,10 +397,18 @@ export function ControlPlane({
     const form = new FormData(event.currentTarget);
     const serverId = String(form.get("serverId"));
     const status = String(form.get("agentStatus")) as AgentStatus;
+    const target = store.servers.find((server) => server.id === serverId);
+
+    if (target?.connectivity !== "reachable") {
+      setMessage("Discover the server first. Agent install is only allowed after the gateway confirms the IP is reachable.");
+      setModal(null);
+      return;
+    }
+
     setStore((current) => ({
       ...current,
       servers: current.servers.map((server) =>
-        server.id === serverId ? { ...server, agentStatus: status, lastSeen: status === "online" ? "Just now" : "Deployment queued" } : server
+        server.id === serverId ? { ...server, agentStatus: status, lastSeen: "Agent installation queued" } : server
       )
     }));
     void postJson(`/api/servers/${serverId}/agent`, { agentStatus: status });
@@ -347,7 +419,19 @@ export function ControlPlane({
   function runJob(jobId: string) {
     setStore((current) => ({
       ...current,
-      jobs: current.jobs.map((job) => (job.id === jobId ? { ...job, status: "running" } : job))
+      jobs: current.jobs.map((job) =>
+        job.id === jobId
+          ? {
+              ...job,
+              status: "running",
+              progressPercent: Math.max(job.progressPercent, 8),
+              throughputMbps: job.action === "replicate" ? 420 : 185,
+              processedGb: Math.max(job.processedGb, 12),
+              duration: "Running",
+              bottleneck: job.action === "replicate" ? "Network" : "Source"
+            }
+          : job
+      )
     }));
     void postJson(`/api/jobs/${jobId}/run`, {});
     setMessage("Job run started");
@@ -364,6 +448,31 @@ export function ControlPlane({
     setMessage("Restore workflow started");
   }
 
+  function discoverServer(serverId: string) {
+    setStore((current) => ({
+      ...current,
+      servers: current.servers.map((server) =>
+        server.id === serverId
+          ? { ...server, connectivity: "reachable", lastSeen: "Reachable just now" }
+          : server
+      )
+    }));
+    void postJson(`/api/servers/${serverId}/discover`, {});
+    setMessage("Gateway discovery confirmed the server IP is reachable");
+  }
+
+  function deleteRepository(repository: BackupRepository) {
+    if (!window.confirm(`Delete repository ${repository.name}?`)) {
+      return;
+    }
+    setStore((current) => ({
+      ...current,
+      repositories: current.repositories.filter((item) => item.id !== repository.id)
+    }));
+    void deleteJson(`/api/repositories/${repository.id}`);
+    setMessage(`Repository ${repository.name} deleted`);
+  }
+
   function deleteCustomer(customer: Customer) {
     if (!window.confirm(`Delete customer ${customer.name}? This also removes local servers, jobs, and restores for that customer.`)) {
       return;
@@ -373,7 +482,8 @@ export function ControlPlane({
       servers: current.servers.filter((server) => server.customerId !== customer.id),
       jobs: current.jobs.filter((job) => job.customerId !== customer.id),
       restores: current.restores.filter((restore) => restore.customerId !== customer.id),
-      users: current.users.filter((user) => user.customerId !== customer.id)
+      users: current.users.filter((user) => user.customerId !== customer.id),
+      repositories: current.repositories.filter((repository) => repository.customerId !== customer.id)
     }));
     void deleteJson(`/api/customers/${customer.id}`);
     setMessage(`Customer ${customer.name} deleted`);
@@ -462,7 +572,7 @@ export function ControlPlane({
           </div>
           <div>
             <span>Gateways</span>
-            <strong>{onlineServers}/{store.servers.length} online</strong>
+            <strong>{reachableServers}/{store.servers.length} reachable</strong>
           </div>
           <div>
             <span>Users</span>
@@ -487,7 +597,7 @@ export function ControlPlane({
           <article>
             <span>Agent coverage</span>
             <strong>{onlineServers}/{store.servers.length}</strong>
-            <small>Servers currently reporting online</small>
+            <small>Agents currently reporting online</small>
           </article>
           <article>
             <span>Job activity</span>
@@ -498,6 +608,11 @@ export function ControlPlane({
             <span>Access control</span>
             <strong>{store.users.length}</strong>
             <small>{activeUsers} active platform user{activeUsers === 1 ? "" : "s"}</small>
+          </article>
+          <article>
+            <span>Repository use</span>
+            <strong>{repositoryUsedGb}/{repositoryCapacityGb} GB</strong>
+            <small>{store.repositories.length} backup repositor{store.repositories.length === 1 ? "y" : "ies"}</small>
           </article>
         </section>
 
@@ -590,7 +705,7 @@ export function ControlPlane({
                     <strong>{user.name}</strong>
                     <small>{user.email} - last seen {user.lastSeen}</small>
                   </span>
-                  <span>{customerName.get(user.customerId) ?? "Unassigned"}</span>
+                  <span>{user.accountType === "platform_admin" ? "Platform admin" : customerName.get(user.customerId ?? "") ?? "Unassigned"}</span>
                   <span>{user.role}</span>
                   <span className={`pill user-${user.status}`}>{user.status}</span>
                   <span className="row-actions">
@@ -614,6 +729,50 @@ export function ControlPlane({
           </section>
         )}
 
+        {(initialView === "overview" || initialView === "repositories") && (
+          <section className="panel page-panel">
+            <div className="panel-head">
+              <h2>Backup repositories</h2>
+              <button type="button" className="ghost" onClick={() => setModal("repository")}>Add repository</button>
+            </div>
+            <div className="job-list">
+              {store.repositories.map((repository) => {
+                const usedPercent = repository.capacityGb > 0 ? Math.round((repository.usedGb / repository.capacityGb) * 100) : 0;
+
+                return (
+                  <article className="job repository-row" key={repository.id}>
+                    <div>
+                      <span className="job-action">{repository.type}</span>
+                      <strong>{repository.name}</strong>
+                      <small>{customerName.get(repository.customerId)} - {repository.location} - {repository.immutable ? "Immutable" : "Mutable"}</small>
+                      <div className="progress-track">
+                        <span style={{ width: `${Math.min(100, usedPercent)}%` }} />
+                      </div>
+                    </div>
+                    <div className="job-actions">
+                      <span>{repository.usedGb} GB / {repository.capacityGb} GB</span>
+                      <span className={statusClass(repository.status)}>{statusLabels[repository.status]}</span>
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => {
+                          setSelectedRepository(repository.id);
+                          setModal("editRepository");
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button type="button" className="ghost danger" onClick={() => deleteRepository(repository)}>
+                        Delete
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         {(initialView === "overview" || initialView === "servers") && (
           <section className="panel page-panel">
             <div className="panel-head">
@@ -627,9 +786,13 @@ export function ControlPlane({
                     <strong>{server.hostname}</strong>
                     <span>{server.address} - {server.kind.toUpperCase()} - {customerName.get(server.customerId)}</span>
                   </div>
+                  <span className={`agent connectivity-${server.connectivity}`}>{server.connectivity}</span>
                   <span className={`agent agent-${server.agentStatus}`}>{server.agentStatus.replace("_", " ")}</span>
-                  <small>Last seen: {server.lastSeen}</small>
+                  <small>Status: {server.lastSeen}</small>
                   <small>Repository: {server.repository}</small>
+                  <button type="button" className="ghost row-action" onClick={() => discoverServer(server.id)}>
+                    Discover
+                  </button>
                   <button
                     type="button"
                     className="ghost row-action"
@@ -638,7 +801,7 @@ export function ControlPlane({
                       setModal("deploy");
                     }}
                   >
-                    Deploy agent
+                    Install agent
                   </button>
                   <span className="row-actions">
                     <button
@@ -664,8 +827,8 @@ export function ControlPlane({
         {(initialView === "overview" || initialView === "jobs") && (
           <section className="panel page-panel">
             <div className="panel-head">
-              <h2>Protection jobs</h2>
-              <button type="button" className="ghost" onClick={() => setModal("job")}>Create job</button>
+              <h2>Backup, replication, and restore operations</h2>
+              <button type="button" className="ghost" onClick={() => setModal("operation")}>New operation</button>
             </div>
             <div className="job-list">
               {store.jobs.map((job) => (
@@ -674,16 +837,31 @@ export function ControlPlane({
                     <span className="job-action">{job.action}</span>
                     <strong>{job.name}</strong>
                     <small>{customerName.get(job.customerId)} - {job.target} - {job.schedule} - RPO {job.rpo}</small>
+                    {job.status === "running" && (
+                      <div className="progress-track">
+                        <span style={{ width: `${Math.min(100, job.progressPercent)}%` }} />
+                      </div>
+                    )}
                   </div>
                   <div className="job-actions">
                     <span className={statusClass(job.status)}>{statusLabels[job.status]}</span>
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => {
+                        setSelectedJob(job.id);
+                        setModal("jobDetails");
+                      }}
+                    >
+                      Details
+                    </button>
                     <button type="button" className="ghost" onClick={() => runJob(job.id)}>Run now</button>
                     <button
                       type="button"
                       className="ghost"
                       onClick={() => {
                         setSelectedJob(job.id);
-                        setModal("editJob");
+                        setModal("editOperation");
                       }}
                     >
                       Edit
@@ -749,8 +927,11 @@ export function ControlPlane({
             {modal === "editUser" && activeUser && <UserForm customers={store.customers} user={activeUser} onSubmit={editUser} />}
             {modal === "server" && <ServerForm customers={store.customers} onSubmit={addServer} />}
             {modal === "editServer" && activeServer && <ServerForm customers={store.customers} server={activeServer} onSubmit={editServer} />}
-            {modal === "job" && <JobForm customers={store.customers} onSubmit={createJob} />}
-            {modal === "editJob" && activeJob && <JobForm customers={store.customers} job={activeJob} onSubmit={editJob} />}
+            {modal === "repository" && <RepositoryForm customers={store.customers} onSubmit={addRepository} />}
+            {modal === "editRepository" && activeRepository && <RepositoryForm customers={store.customers} repository={activeRepository} onSubmit={editRepository} />}
+            {modal === "operation" && <JobForm customers={store.customers} repositories={store.repositories} onSubmit={createJob} />}
+            {modal === "editOperation" && activeJob && <JobForm customers={store.customers} repositories={store.repositories} job={activeJob} onSubmit={editJob} />}
+            {modal === "jobDetails" && activeJob && <JobDetails job={activeJob} />}
             {modal === "restore" && <RestoreForm customers={store.customers} servers={store.servers} onSubmit={startRestore} />}
             {modal === "editRestore" && activeRestore && <RestoreForm customers={store.customers} servers={store.servers} restore={activeRestore} onSubmit={editRestore} />}
             {modal === "deploy" && <DeployForm servers={store.servers} selectedServer={selectedServer} onSubmit={deployAgent} />}
@@ -802,11 +983,14 @@ const modalTitles: Record<Exclude<Modal, null>, string> = {
   editUser: "Edit user",
   server: "Add server by IP",
   editServer: "Edit server",
-  job: "Create protection job",
-  editJob: "Edit protection job",
+  operation: "New backup operation",
+  editOperation: "Edit backup operation",
+  jobDetails: "Operation details",
+  repository: "Add repository",
+  editRepository: "Edit repository",
   restore: "Start restore",
   editRestore: "Edit restore request",
-  deploy: "Deploy agent"
+  deploy: "Install agent"
 };
 
 function CustomerForm({ customer, onSubmit }: { customer?: Customer; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
@@ -821,9 +1005,12 @@ function CustomerForm({ customer, onSubmit }: { customer?: Customer; onSubmit: (
 }
 
 function UserForm({ customers, user, onSubmit }: { customers: Customer[]; user?: ManagedUser; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+  const defaultAccountType = user?.accountType ?? "customer_user";
+
   return (
     <form className="modal-form" onSubmit={onSubmit}>
-      <label>Customer<SelectCustomer customers={customers} defaultValue={user?.customerId} /></label>
+      <label>User type<select name="accountType" defaultValue={defaultAccountType}><option value="platform_admin">Platform admin</option><option value="customer_user">Customer user</option></select></label>
+      <label>Customer<SelectCustomer customers={customers} defaultValue={user?.customerId ?? undefined} /></label>
       <label>Name<input name="name" required placeholder="User full name" defaultValue={user?.name} /></label>
       <label>Email<input name="email" type="email" required placeholder="user@company.com" defaultValue={user?.email} /></label>
       <label>Role<select name="role" defaultValue={user?.role ?? "operator"}><option value="owner">Owner</option><option value="admin">Admin</option><option value="operator">Operator</option><option value="viewer">Viewer</option></select></label>
@@ -831,6 +1018,21 @@ function UserForm({ customers, user, onSubmit }: { customers: Customer[]; user?:
         <label>Status<select name="status" defaultValue={user.status}><option value="active">Active</option><option value="invited">Invited</option><option value="disabled">Disabled</option></select></label>
       )}
       <button className="button primary" type="submit">{user ? "Save user" : "Invite user"}</button>
+    </form>
+  );
+}
+
+function RepositoryForm({ customers, repository, onSubmit }: { customers: Customer[]; repository?: BackupRepository; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+  return (
+    <form className="modal-form" onSubmit={onSubmit}>
+      <label>Customer<SelectCustomer customers={customers} defaultValue={repository?.customerId} /></label>
+      <label>Name<input name="name" required placeholder="Backup Volume 01" defaultValue={repository?.name} /></label>
+      <label>Repository type<select name="type" defaultValue={repository?.type ?? "nas"}><option value="local">Local disk</option><option value="nas">NAS / SMB</option><option value="s3">S3 compatible</option><option value="azure_blob">Azure Blob</option><option value="gcs">Google Cloud Storage</option></select></label>
+      <label>Location<input name="location" required placeholder="\\\\backup-nas\\repo or s3://bucket" defaultValue={repository?.location} /></label>
+      <label>Capacity GB<input name="capacityGb" type="number" min="1" required defaultValue={repository?.capacityGb ?? 1024} /></label>
+      {repository && <label>Used GB<input name="usedGb" type="number" min="0" required defaultValue={repository.usedGb} /></label>}
+      <label className="checkbox-row"><input type="checkbox" name="immutable" defaultChecked={repository?.immutable} /> Immutable repository</label>
+      <button className="button primary" type="submit">{repository ? "Save repository" : "Add repository"}</button>
     </form>
   );
 }
@@ -848,17 +1050,52 @@ function ServerForm({ customers, server, onSubmit }: { customers: Customer[]; se
   );
 }
 
-function JobForm({ customers, job, onSubmit }: { customers: Customer[]; job?: ProtectionJob; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function JobForm({ customers, repositories, job, onSubmit }: { customers: Customer[]; repositories: BackupRepository[]; job?: ProtectionJob; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   return (
     <form className="modal-form" onSubmit={onSubmit}>
       <label>Customer<SelectCustomer customers={customers} defaultValue={job?.customerId} /></label>
-      <label>Job name<input name="name" required placeholder="Production backup" defaultValue={job?.name} /></label>
-      <label>Action<select name="action" defaultValue={job?.action ?? "backup"}><option value="backup">Backup</option><option value="replicate">Replicate</option><option value="restore">Restore test</option></select></label>
+      <label>Operation name<input name="name" required placeholder="Production protection" defaultValue={job?.name} /></label>
+      <label>Operation<select name="action" defaultValue={job?.action ?? "backup"}><option value="backup">Backup</option><option value="replicate">Replicate</option><option value="restore">Restore</option></select></label>
       <label>Target<input name="target" required placeholder="vSphere cluster or server group" defaultValue={job?.target} /></label>
+      <label>Repository<select name="repository">{repositories.map((repository) => <option value={repository.id} key={repository.id}>{repository.name}</option>)}</select></label>
       <label>Schedule<input name="schedule" required placeholder="Every 4 hours" defaultValue={job?.schedule} /></label>
       <label>RPO<input name="rpo" required placeholder="4h" defaultValue={job?.rpo} /></label>
-      <button className="button primary" type="submit">{job ? "Save job" : "Queue job"}</button>
+      <button className="button primary" type="submit">{job ? "Save operation" : "Create operation"}</button>
     </form>
+  );
+}
+
+function JobDetails({ job }: { job: ProtectionJob }) {
+  return (
+    <div className="details-panel">
+      <div className="details-grid">
+        <article>
+          <span>Progress</span>
+          <strong>{job.progressPercent}%</strong>
+        </article>
+        <article>
+          <span>Network speed</span>
+          <strong>{job.throughputMbps} Mbps</strong>
+        </article>
+        <article>
+          <span>Processed</span>
+          <strong>{job.processedGb} GB</strong>
+        </article>
+        <article>
+          <span>Bottleneck</span>
+          <strong>{job.bottleneck}</strong>
+        </article>
+      </div>
+      <div className="progress-track large">
+        <span style={{ width: `${Math.min(100, job.progressPercent)}%` }} />
+      </div>
+      <dl className="job-detail-list">
+        <div><dt>Status</dt><dd>{statusLabels[job.status]}</dd></div>
+        <div><dt>Operation</dt><dd>{job.action}</dd></div>
+        <div><dt>Target</dt><dd>{job.target}</dd></div>
+        <div><dt>Duration</dt><dd>{job.duration}</dd></div>
+      </dl>
+    </div>
   );
 }
 
@@ -878,8 +1115,8 @@ function DeployForm({ servers, selectedServer, onSubmit }: { servers: ProtectedS
   return (
     <form className="modal-form" onSubmit={onSubmit}>
       <label>Server<select name="serverId" defaultValue={selectedServer}>{servers.map((server) => <option value={server.id} key={server.id}>{server.hostname}</option>)}</select></label>
-      <label>Command<select name="agentStatus" defaultValue="online"><option value="online">Install and mark online</option><option value="installing">Queue installation</option><option value="offline">Mark offline</option><option value="error">Mark error</option></select></label>
-      <button className="button primary" type="submit">Send command</button>
+      <label>Command<select name="agentStatus" defaultValue="installing"><option value="installing">Queue agent installation</option><option value="offline">Mark offline</option><option value="error">Mark error</option></select></label>
+      <button className="button primary" type="submit">Send install command</button>
     </form>
   );
 }

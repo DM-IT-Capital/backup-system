@@ -21,7 +21,8 @@ export async function PATCH(request: Request, context: RouteContext) {
   const { error } = await supabase
     .from("managed_users")
     .update({
-      customer_id: payload.customerId,
+      account_type: payload.accountType,
+      customer_id: payload.accountType === "platform_admin" ? null : payload.customerId,
       name: payload.name,
       email: payload.email,
       role: payload.role,

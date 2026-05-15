@@ -12,6 +12,12 @@ export type UserRole = "owner" | "admin" | "operator" | "viewer";
 
 export type UserStatus = "active" | "invited" | "disabled";
 
+export type UserAccountType = "platform_admin" | "customer_user";
+
+export type ConnectivityStatus = "unknown" | "checking" | "reachable" | "unreachable";
+
+export type RepositoryType = "local" | "nas" | "s3" | "azure_blob" | "gcs";
+
 export type Customer = {
   id: string;
   name: string;
@@ -28,6 +34,7 @@ export type ProtectedServer = {
   hostname: string;
   address: string;
   kind: ServerKind;
+  connectivity: ConnectivityStatus;
   agentStatus: AgentStatus;
   lastSeen: string;
   repository: string;
@@ -42,6 +49,11 @@ export type ProtectionJob = {
   target: string;
   status: JobStatus;
   rpo: string;
+  progressPercent: number;
+  throughputMbps: number;
+  processedGb: number;
+  duration: string;
+  bottleneck: string;
 };
 
 export type RestoreRequest = {
@@ -56,10 +68,23 @@ export type RestoreRequest = {
 
 export type ManagedUser = {
   id: string;
-  customerId: string;
+  accountType: UserAccountType;
+  customerId: string | null;
   name: string;
   email: string;
   role: UserRole;
   status: UserStatus;
   lastSeen: string;
+};
+
+export type BackupRepository = {
+  id: string;
+  customerId: string;
+  name: string;
+  type: RepositoryType;
+  location: string;
+  capacityGb: number;
+  usedGb: number;
+  immutable: boolean;
+  status: JobStatus;
 };

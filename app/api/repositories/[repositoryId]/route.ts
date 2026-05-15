@@ -2,16 +2,16 @@ import { NextResponse } from "next/server";
 import { demoAccepted, getAuthenticatedSupabase, unauthorized } from "@/lib/api";
 
 type RouteContext = {
-  params: Promise<{ jobId: string }>;
+  params: Promise<{ repositoryId: string }>;
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
   const payload = await request.json();
-  const { jobId } = await context.params;
+  const { repositoryId } = await context.params;
   const { supabase, userId, demo } = await getAuthenticatedSupabase();
 
   if (demo) {
-    return demoAccepted({ jobId, ...payload });
+    return demoAccepted({ repositoryId, ...payload });
   }
 
   if (!supabase || !userId) {
@@ -19,25 +19,20 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   const { error } = await supabase
-    .from("protection_jobs")
+    .from("repositories")
     .update({
       customer_id: payload.customerId,
       name: payload.name,
-      action: payload.action,
-      schedule_cron: payload.schedule,
-      policy: {
-        target: payload.target,
-        rpo: payload.rpo,
-        status: payload.status ?? "idle",
-        repositoryId: payload.repository,
-        progressPercent: payload.progressPercent ?? 0,
-        throughputMbps: payload.throughputMbps ?? 0,
-        processedGb: payload.processedGb ?? 0,
-        duration: payload.duration ?? "0 min",
-        bottleneck: payload.bottleneck ?? "Pending"
+      repository_type: payload.type,
+      config: {
+        location: payload.location,
+        capacityGb: payload.capacityGb,
+        usedGb: payload.usedGb,
+        immutable: payload.immutable,
+        status: payload.status ?? "idle"
       }
     })
-    .eq("id", jobId);
+    .eq("id", repositoryId);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
@@ -47,18 +42,18 @@ export async function PATCH(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {
-  const { jobId } = await context.params;
+  const { repositoryId } = await context.params;
   const { supabase, userId, demo } = await getAuthenticatedSupabase();
 
   if (demo) {
-    return demoAccepted({ jobId });
+    return demoAccepted({ repositoryId });
   }
 
   if (!supabase || !userId) {
     return unauthorized();
   }
 
-  const { error } = await supabase.from("protection_jobs").delete().eq("id", jobId);
+  const { error } = await supabase.from("repositories").delete().eq("id", repositoryId);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
