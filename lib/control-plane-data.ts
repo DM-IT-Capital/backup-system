@@ -38,7 +38,7 @@ export async function getControlPlaneStore(): Promise<ControlPlaneStore> {
     membershipsResult
   ] = await Promise.all([
     supabase.from("customers").select("id,name,mode,created_at"),
-    supabase.from("protected_servers").select("id,customer_id,hostname,address,kind,agent_status,last_seen_at,repository:repositories(name)"),
+    supabase.from("protected_servers").select("id,customer_id,hostname,address,kind,agent_status,last_seen_at,repository_id,repository:repositories(id,name)"),
     supabase.from("protection_jobs").select("id,customer_id,name,action,schedule_cron,policy,enabled,created_at"),
     supabase.from("restore_requests").select("id,customer_id,server_id,restore_point,target,status,created_at"),
     supabase.from("managed_users").select("id,account_type,customer_id,name,email,role,status,last_seen_at,created_at"),
@@ -70,7 +70,7 @@ export async function getControlPlaneStore(): Promise<ControlPlaneStore> {
   });
 
   const mappedServers: ProtectedServer[] = serverRows.map((server) => {
-    const repository = server.repository as { name?: string } | { name?: string }[] | null;
+    const repository = server.repository as { id?: string; name?: string } | { id?: string; name?: string }[] | null;
 
     return {
       id: server.id,
@@ -83,7 +83,8 @@ export async function getControlPlaneStore(): Promise<ControlPlaneStore> {
       lastSeen: server.last_seen_at ? new Date(server.last_seen_at).toLocaleString() : "Never",
       repository: Array.isArray(repository)
         ? repository[0]?.name ?? "Unassigned"
-        : repository?.name ?? "Unassigned"
+        : repository?.name ?? "Unassigned",
+      repositoryId: server.repository_id ?? (Array.isArray(repository) ? repository[0]?.id ?? null : repository?.id ?? null)
     };
   });
 

@@ -17,12 +17,20 @@ export async function POST(request: Request) {
     return serverConfigError(configError ?? "Supabase admin client is not configured.");
   }
 
-  const { data: repository } = await admin
-    .from("repositories")
-    .select("id")
-    .eq("customer_id", payload.customerId)
-    .limit(1)
-    .maybeSingle();
+  const repositoryId = typeof payload.repositoryId === "string" && payload.repositoryId.length > 0 ? payload.repositoryId : null;
+
+  if (repositoryId) {
+    const { data: repository, error: repositoryError } = await admin
+      .from("repositories")
+      .select("id")
+      .eq("id", repositoryId)
+      .eq("customer_id", payload.customerId)
+      .maybeSingle();
+
+    if (repositoryError || !repository) {
+      return NextResponse.json({ error: "Selected repository does not belong to this customer." }, { status: 400 });
+    }
+  }
 
   const { data: gateway } = await admin
     .from("gateways")
@@ -40,7 +48,7 @@ export async function POST(request: Request) {
       address: payload.address,
       kind: payload.kind,
       agent_status: "not_installed",
-      repository_id: repository?.id ?? null
+      repository_id: repositoryId
     })
     .select("id")
     .single();
@@ -55,7 +63,7 @@ export async function POST(request: Request) {
     command_type: "deploy_agent",
     payload: {
       server_id: data.id,
-      repository_id: repository?.id ?? null,
+      repository_id: repositoryId,
       address: payload.address,
       kind: payload.kind
     }

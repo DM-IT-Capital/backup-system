@@ -272,7 +272,8 @@ export function ControlPlane({
       connectivity: "unknown",
       agentStatus: "not_installed",
       lastSeen: "Not discovered",
-      repository: String(form.get("repository"))
+      repositoryId: String(form.get("repositoryId") || "") || null,
+      repository: String(form.get("repositoryName") || "Unassigned")
     };
 
     try {
@@ -304,7 +305,8 @@ export function ControlPlane({
       hostname: String(form.get("hostname")),
       address: String(form.get("address")),
       kind: String(form.get("kind")) as ServerKind,
-      repository: String(form.get("repository"))
+      repositoryId: String(form.get("repositoryId") || "") || null,
+      repository: String(form.get("repositoryName") || "Unassigned")
     };
     setStore((current) => ({
       ...current,
@@ -517,17 +519,54 @@ export function ControlPlane({
     setMessage("Restore workflow started");
   }
 
-  function discoverServer(serverId: string) {
+  async function discoverServer(serverId: string) {
+    const target = store.servers.find((server) => server.id === serverId);
+
     setStore((current) => ({
       ...current,
       servers: current.servers.map((server) =>
         server.id === serverId
-          ? { ...server, connectivity: "reachable", lastSeen: "Reachable just now" }
+          ? { ...server, connectivity: "checking", lastSeen: "Discovery queued" }
           : server
       )
     }));
-    void postJson(`/api/servers/${serverId}/discover`, {});
-    setMessage("Gateway discovery confirmed the server IP is reachable");
+
+    try {
+      const result = await postJsonStrict<{ status?: ConnectivityStatus; message?: string }>(
+        `/api/servers/${serverId}/discover`,
+        {}
+      );
+      const status = result.status ?? "checking";
+
+      setStore((current) => ({
+        ...current,
+        servers: current.servers.map((server) =>
+          server.id === serverId
+            ? {
+                ...server,
+                connectivity: status,
+                lastSeen:
+                  status === "reachable"
+                    ? "Reachable just now"
+                    : status === "unreachable"
+                      ? "Discovery failed"
+                      : "Discovery command queued for gateway"
+              }
+            : server
+        )
+      }));
+      setMessage(result.message ?? `Discovery queued for ${target?.hostname ?? "server"}. Waiting for gateway result.`);
+    } catch (error) {
+      setStore((current) => ({
+        ...current,
+        servers: current.servers.map((server) =>
+          server.id === serverId
+            ? { ...server, connectivity: "unknown", lastSeen: target?.lastSeen ?? "Never" }
+            : server
+        )
+      }));
+      setMessage(error instanceof Error ? error.message : "Unable to queue discovery");
+    }
   }
 
   function deleteRepository(repository: BackupRepository) {
@@ -994,8 +1033,8 @@ export function ControlPlane({
             {modal === "editCustomer" && activeCustomer && <CustomerForm customer={activeCustomer} onSubmit={editCustomer} />}
             {modal === "user" && <UserForm customers={store.customers} onSubmit={addUser} />}
             {modal === "editUser" && activeUser && <UserForm customers={store.customers} user={activeUser} onSubmit={editUser} />}
-            {modal === "server" && <ServerForm customers={store.customers} onSubmit={addServer} />}
-            {modal === "editServer" && activeServer && <ServerForm customers={store.customers} server={activeServer} onSubmit={editServer} />}
+            {modal === "server" && <ServerForm customers={store.customers} repositories={store.repositories} onSubmit={addServer} />}
+            {modal === "editServer" && activeServer && <ServerForm customers={store.customers} repositories={store.repositories} server={activeServer} onSubmit={editServer} />}
             {modal === "repository" && <RepositoryForm customers={store.customers} onSubmit={addRepository} />}
             {modal === "editRepository" && activeRepository && <RepositoryForm customers={store.customers} repository={activeRepository} onSubmit={editRepository} />}
             {modal === "operation" && <JobForm customers={store.customers} repositories={store.repositories} onSubmit={createJob} />}
@@ -1177,14 +1216,40 @@ function RepositoryForm({ customers, repository, onSubmit }: { customers: Custom
   );
 }
 
-function ServerForm({ customers, server, onSubmit }: { customers: Customer[]; server?: ProtectedServer; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function ServerForm({ customers, repositories, server, onSubmit }: { customers: Customer[]; repositories: BackupRepository[]; server?: ProtectedServer; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+  const defaultCustomerId = server?.customerId ?? customers[0]?.id ?? "";
+  const defaultRepository = repositories.find((repository) => repository.id === server?.repositoryId)
+    ?? repositories.find((repository) => repository.customerId === defaultCustomerId)
+    ?? null;
+
   return (
     <form className="modal-form" onSubmit={onSubmit}>
-      <label>Customer<SelectCustomer customers={customers} defaultValue={server?.customerId} /></label>
+      <label>Customer<SelectCustomer customers={customers} defaultValue={defaultCustomerId} /></label>
       <label>Hostname<input name="hostname" required placeholder="sql-prod-01" defaultValue={server?.hostname} /></label>
       <label>IP address<input name="address" required placeholder="10.10.10.25" pattern="^([0-9]{1,3}\.){3}[0-9]{1,3}$" defaultValue={server?.address} /></label>
       <label>Server type<select name="kind" defaultValue={server?.kind ?? "windows"}><option value="windows">Windows</option><option value="linux">Linux</option><option value="esxi">ESXi</option><option value="hyperv">Hyper-V</option><option value="proxmox">Proxmox</option><option value="generic">Generic</option></select></label>
-      <label>Repository<input name="repository" required placeholder="Local repository A" defaultValue={server?.repository} /></label>
+      <label>
+        Repository
+        <select
+          name="repositoryId"
+          defaultValue={server?.repositoryId ?? defaultRepository?.id ?? ""}
+          onChange={(event) => {
+            const selected = repositories.find((repository) => repository.id === event.currentTarget.value);
+            const hidden = event.currentTarget.form?.elements.namedItem("repositoryName") as HTMLInputElement | null;
+            if (hidden) {
+              hidden.value = selected?.name ?? "Unassigned";
+            }
+          }}
+        >
+          <option value="">Unassigned</option>
+          {repositories.map((repository) => (
+            <option value={repository.id} key={repository.id}>
+              {repository.name} - {customers.find((customer) => customer.id === repository.customerId)?.name ?? "Unknown customer"}
+            </option>
+          ))}
+        </select>
+      </label>
+      <input type="hidden" name="repositoryName" defaultValue={server?.repository ?? defaultRepository?.name ?? "Unassigned"} />
       <button className="button primary" type="submit">{server ? "Save server" : "Add and deploy agent"}</button>
     </form>
   );

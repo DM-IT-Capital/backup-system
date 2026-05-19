@@ -22,13 +22,29 @@ export async function PATCH(request: Request, context: RouteContext) {
     return serverConfigError(configError ?? "Supabase admin client is not configured.");
   }
 
+  const repositoryId = typeof payload.repositoryId === "string" && payload.repositoryId.length > 0 ? payload.repositoryId : null;
+
+  if (repositoryId) {
+    const { data: repository, error: repositoryError } = await admin
+      .from("repositories")
+      .select("id")
+      .eq("id", repositoryId)
+      .eq("customer_id", payload.customerId)
+      .maybeSingle();
+
+    if (repositoryError || !repository) {
+      return NextResponse.json({ error: "Selected repository does not belong to this customer." }, { status: 400 });
+    }
+  }
+
   const { error } = await admin
     .from("protected_servers")
     .update({
       customer_id: payload.customerId,
       hostname: payload.hostname,
       address: payload.address,
-      kind: payload.kind
+      kind: payload.kind,
+      repository_id: repositoryId
     })
     .eq("id", serverId);
 

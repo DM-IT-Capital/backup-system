@@ -38,6 +38,7 @@ export type ProtectedServer = {
   agentStatus: AgentStatus;
   lastSeen: string;
   repository: string;
+  repositoryId?: string | null;
 };
 
 export type ProtectionJob = {
