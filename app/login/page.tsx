@@ -1,5 +1,5 @@
 import { signIn } from "@/app/auth/actions";
-import { hasSupabaseConfig } from "@/lib/supabase/config";
+import { getSupabaseConfigError, hasSupabaseConfig } from "@/lib/supabase/config";
 
 type LoginPageProps = {
   searchParams: Promise<{
@@ -11,6 +11,7 @@ type LoginPageProps = {
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
   const isConfigured = hasSupabaseConfig();
+  const configError = getSupabaseConfigError();
 
   return (
     <main className="login-shell">
@@ -73,12 +74,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             {params.error ?? (
               isConfigured
                 ? "Use a Supabase Auth user created in your Supabase project."
-                : "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel, then redeploy."
+                : "Supabase is not configured correctly. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel, then redeploy."
             )}
           </p>
           {!isConfigured && (
             <div className="setup-box">
               <strong>Required before login works</strong>
+              {configError && <span>{configError}</span>}
               <span>Set `NEXT_PUBLIC_SUPABASE_URL`</span>
               <span>Set `NEXT_PUBLIC_SUPABASE_ANON_KEY`</span>
               <span>Create a Supabase Auth user</span>
