@@ -70,6 +70,7 @@ export type ManagedUser = {
   id: string;
   accountType: UserAccountType;
   customerId: string | null;
+  customerIds?: string[];
   name: string;
   email: string;
   role: UserRole;

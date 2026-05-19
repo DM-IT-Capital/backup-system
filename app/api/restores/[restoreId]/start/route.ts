@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { demoAccepted, getAuthenticatedSupabase, unauthorized } from "@/lib/api";
+import { demoAccepted, getAuthenticatedAdminSupabase, serverConfigError, unauthorized } from "@/lib/api";
 
 type RouteContext = {
   params: Promise<{ restoreId: string }>;
@@ -8,17 +8,21 @@ type RouteContext = {
 export async function POST(request: Request, context: RouteContext) {
   await request.json();
   const { restoreId } = await context.params;
-  const { supabase, userId, demo } = await getAuthenticatedSupabase();
+  const { admin, userId, demo, configError } = await getAuthenticatedAdminSupabase();
 
   if (demo) {
     return demoAccepted({ restoreId });
   }
 
-  if (!supabase || !userId) {
+  if (!userId) {
     return unauthorized();
   }
 
-  const { error } = await supabase
+  if (!admin) {
+    return serverConfigError(configError ?? "Supabase admin client is not configured.");
+  }
+
+  const { error } = await admin
     .from("restore_requests")
     .update({ status: "running" })
     .eq("id", restoreId);

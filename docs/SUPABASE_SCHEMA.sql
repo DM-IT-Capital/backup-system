@@ -171,13 +171,28 @@ alter table restore_requests enable row level security;
 alter table commands enable row level security;
 alter table audit_events enable row level security;
 
-create or replace function is_customer_member(target_customer_id uuid)
+create or replace function is_platform_admin()
 returns boolean
 language sql
 security definer
 set search_path = public
 as $$
   select exists (
+    select 1
+    from managed_users
+    where managed_users.id = auth.uid()
+    and managed_users.account_type = 'platform_admin'
+    and managed_users.status = 'active'
+  );
+$$;
+
+create or replace function is_customer_member(target_customer_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select is_platform_admin() or exists (
     select 1
     from customer_members
     where customer_members.customer_id = target_customer_id
@@ -203,15 +218,20 @@ create policy "members can read memberships"
 on customer_members for select
 using (is_customer_member(customer_id));
 
+create policy "platform admins can manage memberships"
+on customer_members for all
+using (is_platform_admin() or is_customer_member(customer_id))
+with check (is_platform_admin() or is_customer_member(customer_id));
+
 create policy "users can create their owner membership"
 on customer_members for insert
 to authenticated
-with check (user_id = auth.uid());
+with check (user_id = auth.uid() or is_platform_admin());
 
 create policy "members can manage users"
 on managed_users for all
-using (account_type = 'platform_admin' or is_customer_member(customer_id))
-with check (account_type = 'platform_admin' or is_customer_member(customer_id));
+using (is_platform_admin() or account_type = 'platform_admin' or is_customer_member(customer_id))
+with check (is_platform_admin() or account_type = 'platform_admin' or is_customer_member(customer_id));
 
 create policy "members can manage sites"
 on sites for all

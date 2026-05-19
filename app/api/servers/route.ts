@@ -1,33 +1,37 @@
 import { NextResponse } from "next/server";
-import { demoAccepted, getAuthenticatedSupabase, unauthorized } from "@/lib/api";
+import { demoAccepted, getAuthenticatedAdminSupabase, serverConfigError, unauthorized } from "@/lib/api";
 
 export async function POST(request: Request) {
   const payload = await request.json();
-  const { supabase, userId, demo } = await getAuthenticatedSupabase();
+  const { admin, userId, demo, configError } = await getAuthenticatedAdminSupabase();
 
   if (demo) {
     return demoAccepted(payload);
   }
 
-  if (!supabase || !userId) {
+  if (!userId) {
     return unauthorized();
   }
 
-  const { data: repository } = await supabase
+  if (!admin) {
+    return serverConfigError(configError ?? "Supabase admin client is not configured.");
+  }
+
+  const { data: repository } = await admin
     .from("repositories")
     .select("id")
     .eq("customer_id", payload.customerId)
     .limit(1)
     .maybeSingle();
 
-  const { data: gateway } = await supabase
+  const { data: gateway } = await admin
     .from("gateways")
     .select("id")
     .eq("customer_id", payload.customerId)
     .limit(1)
     .maybeSingle();
 
-  const { data, error } = await supabase
+  const { data, error } = await admin
     .from("protected_servers")
     .insert({
       customer_id: payload.customerId,
@@ -45,7 +49,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  await supabase.from("commands").insert({
+  await admin.from("commands").insert({
     customer_id: payload.customerId,
     gateway_id: gateway?.id ?? null,
     command_type: "deploy_agent",

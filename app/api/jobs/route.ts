@@ -1,19 +1,23 @@
 import { NextResponse } from "next/server";
 import { jobs } from "@/lib/mock-data";
-import { demoAccepted, getAuthenticatedSupabase, unauthorized } from "@/lib/api";
+import { demoAccepted, getAuthenticatedAdminSupabase, serverConfigError, unauthorized } from "@/lib/api";
 
 export async function GET() {
-  const { supabase, userId, demo } = await getAuthenticatedSupabase();
+  const { admin, userId, demo, configError } = await getAuthenticatedAdminSupabase();
 
   if (demo) {
     return NextResponse.json({ jobs });
   }
 
-  if (!supabase || !userId) {
+  if (!userId) {
     return unauthorized();
   }
 
-  const { data, error } = await supabase
+  if (!admin) {
+    return serverConfigError(configError ?? "Supabase admin client is not configured.");
+  }
+
+  const { data, error } = await admin
     .from("protection_jobs")
     .select("id,customer_id,name,action,schedule_cron,policy,enabled,created_at")
     .order("created_at", { ascending: false });
@@ -27,17 +31,21 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const payload = await request.json();
-  const { supabase, userId, demo } = await getAuthenticatedSupabase();
+  const { admin, userId, demo, configError } = await getAuthenticatedAdminSupabase();
 
   if (demo) {
     return demoAccepted(payload);
   }
 
-  if (!supabase || !userId) {
+  if (!userId) {
     return unauthorized();
   }
 
-  const { data, error } = await supabase
+  if (!admin) {
+    return serverConfigError(configError ?? "Supabase admin client is not configured.");
+  }
+
+  const { data, error } = await admin
     .from("protection_jobs")
     .insert({
       customer_id: payload.customerId,
@@ -63,13 +71,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  await supabase.from("job_runs").insert({
+  await admin.from("job_runs").insert({
     customer_id: payload.customerId,
     job_id: data.id,
     status: "queued"
   });
 
-  await supabase.from("commands").insert({
+  await admin.from("commands").insert({
     customer_id: payload.customerId,
     command_type: payload.action,
     payload: {

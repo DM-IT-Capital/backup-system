@@ -2,11 +2,12 @@
 
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { hasSupabaseConfig } from "@/lib/supabase/config";
+import { getSupabaseConfigError, hasSupabaseConfig } from "@/lib/supabase/config";
 
 export async function signIn(formData: FormData) {
   if (!hasSupabaseConfig()) {
-    redirect("/login?error=Supabase%20is%20not%20configured");
+    const configError = getSupabaseConfigError() ?? "Supabase is not configured";
+    redirect(`/login?error=${encodeURIComponent(configError)}`);
   }
 
   const email = String(formData.get("email"));

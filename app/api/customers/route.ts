@@ -1,19 +1,23 @@
 import { NextResponse } from "next/server";
-import { demoAccepted, getAuthenticatedSupabase, unauthorized } from "@/lib/api";
+import { demoAccepted, getAuthenticatedAdminSupabase, serverConfigError, unauthorized } from "@/lib/api";
 
 export async function POST(request: Request) {
   const payload = await request.json();
-  const { supabase, userId, demo } = await getAuthenticatedSupabase();
+  const { admin, userId, demo, configError } = await getAuthenticatedAdminSupabase();
 
   if (demo) {
     return demoAccepted(payload);
   }
 
-  if (!supabase || !userId) {
+  if (!userId) {
     return unauthorized();
   }
 
-  const { data, error } = await supabase
+  if (!admin) {
+    return serverConfigError(configError ?? "Supabase admin client is not configured.");
+  }
+
+  const { data, error } = await admin
     .from("customers")
     .insert({
       name: payload.name,
@@ -26,7 +30,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  await supabase.from("customer_members").insert({
+  await admin.from("customer_members").insert({
     customer_id: data.id,
     user_id: userId,
     role: "owner"

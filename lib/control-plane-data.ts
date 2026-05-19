@@ -34,14 +34,16 @@ export async function getControlPlaneStore(): Promise<ControlPlaneStore> {
     jobsResult,
     restoresResult,
     usersResult,
-    repositoriesResult
+    repositoriesResult,
+    membershipsResult
   ] = await Promise.all([
     supabase.from("customers").select("id,name,mode,created_at"),
     supabase.from("protected_servers").select("id,customer_id,hostname,address,kind,agent_status,last_seen_at,repository:repositories(name)"),
     supabase.from("protection_jobs").select("id,customer_id,name,action,schedule_cron,policy,enabled,created_at"),
     supabase.from("restore_requests").select("id,customer_id,server_id,restore_point,target,status,created_at"),
     supabase.from("managed_users").select("id,account_type,customer_id,name,email,role,status,last_seen_at,created_at"),
-    supabase.from("repositories").select("id,customer_id,name,repository_type,config,created_at")
+    supabase.from("repositories").select("id,customer_id,name,repository_type,config,created_at"),
+    supabase.from("customer_members").select("user_id,customer_id")
   ]);
 
   if (customersResult.error) {
@@ -111,16 +113,35 @@ export async function getControlPlaneStore(): Promise<ControlPlaneStore> {
     requestedAt: new Date(restore.created_at).toLocaleString()
   }));
 
-  const mappedUsers: ManagedUser[] = (usersResult.data ?? []).map((user) => ({
-    id: user.id,
-    accountType: user.account_type ?? "customer_user",
-    customerId: user.customer_id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    status: user.status,
-    lastSeen: user.last_seen_at ? new Date(user.last_seen_at).toLocaleString() : "Never"
-  }));
+  const membershipsByUser = new Map<string, string[]>();
+  for (const membership of membershipsResult.data ?? []) {
+    const userMemberships = membershipsByUser.get(membership.user_id) ?? [];
+    userMemberships.push(membership.customer_id);
+    membershipsByUser.set(membership.user_id, userMemberships);
+  }
+
+  const mappedUsers: ManagedUser[] = (usersResult.data ?? []).map((user) => {
+    const membershipCustomerIds = membershipsByUser.get(user.id) ?? [];
+    const customerIds = user.account_type === "platform_admin"
+      ? []
+      : membershipCustomerIds.length > 0
+        ? membershipCustomerIds
+        : user.customer_id
+          ? [user.customer_id]
+          : [];
+
+    return {
+      id: user.id,
+      accountType: user.account_type ?? "customer_user",
+      customerId: user.account_type === "platform_admin" ? null : customerIds[0] ?? user.customer_id,
+      customerIds,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      lastSeen: user.last_seen_at ? new Date(user.last_seen_at).toLocaleString() : "Never"
+    };
+  });
 
   const mappedRepositories: BackupRepository[] = (repositoriesResult.data ?? []).map((repository) => ({
     id: repository.id,

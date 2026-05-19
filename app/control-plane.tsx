@@ -76,6 +76,14 @@ function makeId(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}`;
 }
 
+function getSelectedCustomerIds(form: FormData) {
+  return form.getAll("customerIds").map(String).filter(Boolean);
+}
+
+function primaryCustomerId(customerIds: string[]) {
+  return customerIds[0] ?? null;
+}
+
 export function ControlPlane({
   initialView,
   initialStore,
@@ -139,7 +147,7 @@ export function ControlPlane({
   const activeJob = store.jobs.find((job) => job.id === selectedJob);
   const activeRestore = store.restores.find((restore) => restore.id === selectedRestore);
 
-  function addCustomer(event: FormEvent<HTMLFormElement>) {
+  async function addCustomer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const customer: Customer = {
@@ -151,10 +159,17 @@ export function ControlPlane({
       lastBackup: "No backups yet",
       health: "idle"
     };
-    setStore((current) => ({ ...current, customers: [customer, ...current.customers] }));
-    void postJson("/api/customers", customer);
-    setMessage(`Customer ${customer.name} created`);
-    setModal(null);
+
+    try {
+      const result = await postJsonStrict<{ id?: string }>("/api/customers", customer);
+      const savedCustomer = { ...customer, id: result.id ?? customer.id };
+      setStore((current) => ({ ...current, customers: [savedCustomer, ...current.customers] }));
+      setSelectedCustomer(savedCustomer.id);
+      setMessage(`Customer ${savedCustomer.name} created`);
+      setModal(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to create customer");
+    }
   }
 
   function editCustomer(event: FormEvent<HTMLFormElement>) {
@@ -179,10 +194,18 @@ export function ControlPlane({
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const accountType = String(form.get("accountType")) as ManagedUser["accountType"];
+    const customerIds = accountType === "platform_admin" ? [] : getSelectedCustomerIds(form);
+
+    if (accountType === "customer_user" && customerIds.length === 0) {
+      setMessage("Select at least one customer for this customer user");
+      return;
+    }
+
     const user: ManagedUser = {
       id: makeId("user"),
       accountType,
-      customerId: accountType === "platform_admin" ? null : String(form.get("customerId")),
+      customerId: accountType === "platform_admin" ? null : primaryCustomerId(customerIds),
+      customerIds,
       name: String(form.get("name")),
       email: String(form.get("email")),
       role: String(form.get("role")) as UserRole,
@@ -210,10 +233,18 @@ export function ControlPlane({
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const accountType = String(form.get("accountType")) as ManagedUser["accountType"];
+    const customerIds = accountType === "platform_admin" ? [] : getSelectedCustomerIds(form);
+
+    if (accountType === "customer_user" && customerIds.length === 0) {
+      setMessage("Select at least one customer for this customer user");
+      return;
+    }
+
     const updated: ManagedUser = {
       ...(activeUser as ManagedUser),
       accountType,
-      customerId: accountType === "platform_admin" ? null : String(form.get("customerId")),
+      customerId: accountType === "platform_admin" ? null : primaryCustomerId(customerIds),
+      customerIds,
       name: String(form.get("name")),
       email: String(form.get("email")),
       role: String(form.get("role")) as UserRole,
@@ -228,7 +259,7 @@ export function ControlPlane({
     setModal(null);
   }
 
-  function addServer(event: FormEvent<HTMLFormElement>) {
+  async function addServer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const customerId = String(form.get("customerId"));
@@ -243,19 +274,25 @@ export function ControlPlane({
       lastSeen: "Not discovered",
       repository: String(form.get("repository"))
     };
-    setStore((current) => ({
-      ...current,
-      servers: [server, ...current.servers],
-      customers: current.customers.map((customer) =>
-        customer.id === customerId
-          ? { ...customer, protectedServers: customer.protectedServers + 1, health: "warning" }
-          : customer
-      )
-    }));
-    void postJson("/api/servers", server);
-    setSelectedServer(server.id);
-    setMessage(`Server ${server.hostname} queued for agent deployment`);
-    setModal(null);
+
+    try {
+      const result = await postJsonStrict<{ id?: string }>("/api/servers", server);
+      const savedServer = { ...server, id: result.id ?? server.id };
+      setStore((current) => ({
+        ...current,
+        servers: [savedServer, ...current.servers],
+        customers: current.customers.map((customer) =>
+          customer.id === customerId
+            ? { ...customer, protectedServers: customer.protectedServers + 1, health: "warning" }
+            : customer
+        )
+      }));
+      setSelectedServer(savedServer.id);
+      setMessage(`Server ${savedServer.hostname} queued for agent deployment`);
+      setModal(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to add server");
+    }
   }
 
   function editServer(event: FormEvent<HTMLFormElement>) {
@@ -278,7 +315,7 @@ export function ControlPlane({
     setModal(null);
   }
 
-  function addRepository(event: FormEvent<HTMLFormElement>) {
+  async function addRepository(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const repository: BackupRepository = {
@@ -292,10 +329,17 @@ export function ControlPlane({
       immutable: form.get("immutable") === "on",
       status: "idle"
     };
-    setStore((current) => ({ ...current, repositories: [repository, ...current.repositories] }));
-    void postJson("/api/repositories", repository);
-    setMessage(`Repository ${repository.name} added`);
-    setModal(null);
+
+    try {
+      const result = await postJsonStrict<{ id?: string }>("/api/repositories", repository);
+      const savedRepository = { ...repository, id: result.id ?? repository.id };
+      setStore((current) => ({ ...current, repositories: [savedRepository, ...current.repositories] }));
+      setSelectedRepository(savedRepository.id);
+      setMessage(`Repository ${savedRepository.name} added`);
+      setModal(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to add repository");
+    }
   }
 
   function editRepository(event: FormEvent<HTMLFormElement>) {
@@ -320,7 +364,7 @@ export function ControlPlane({
     setModal(null);
   }
 
-  function createJob(event: FormEvent<HTMLFormElement>) {
+  async function createJob(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const action = String(form.get("action")) as ProtectionAction;
@@ -339,10 +383,17 @@ export function ControlPlane({
       duration: "0 min",
       bottleneck: "Pending"
     };
-    setStore((current) => ({ ...current, jobs: [job, ...current.jobs] }));
-    void postJson("/api/jobs", job);
-    setMessage(`${action} job ${job.name} queued`);
-    setModal(null);
+
+    try {
+      const result = await postJsonStrict<{ id?: string }>("/api/jobs", job);
+      const savedJob = { ...job, id: result.id ?? job.id };
+      setStore((current) => ({ ...current, jobs: [savedJob, ...current.jobs] }));
+      setSelectedJob(savedJob.id);
+      setMessage(`${action} job ${savedJob.name} queued`);
+      setModal(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to create job");
+    }
   }
 
   function editJob(event: FormEvent<HTMLFormElement>) {
@@ -366,7 +417,7 @@ export function ControlPlane({
     setModal(null);
   }
 
-  function startRestore(event: FormEvent<HTMLFormElement>) {
+  async function startRestore(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const restore: RestoreRequest = {
@@ -378,10 +429,17 @@ export function ControlPlane({
       status: "queued",
       requestedAt: nowLabel()
     };
-    setStore((current) => ({ ...current, restores: [restore, ...current.restores] }));
-    void postJson("/api/restores", restore);
-    setMessage("Restore request queued");
-    setModal(null);
+
+    try {
+      const result = await postJsonStrict<{ id?: string }>("/api/restores", restore);
+      const savedRestore = { ...restore, id: result.id ?? restore.id };
+      setStore((current) => ({ ...current, restores: [savedRestore, ...current.restores] }));
+      setSelectedRestore(savedRestore.id);
+      setMessage("Restore request queued");
+      setModal(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to start restore");
+    }
   }
 
   function editRestore(event: FormEvent<HTMLFormElement>) {
@@ -716,7 +774,7 @@ export function ControlPlane({
                     <strong>{user.name}</strong>
                     <small>{user.email} - last seen {user.lastSeen}</small>
                   </span>
-                  <span>{user.accountType === "platform_admin" ? "Platform admin" : customerName.get(user.customerId ?? "") ?? "Unassigned"}</span>
+                  <span>{formatUserCustomers(user, customerName)}</span>
                   <span>{user.role}</span>
                   <span className={`pill user-${user.status}`}>{user.status}</span>
                   <span className="row-actions">
@@ -1035,11 +1093,47 @@ function CustomerForm({ customer, onSubmit }: { customer?: Customer; onSubmit: (
 
 function UserForm({ customers, user, onSubmit }: { customers: Customer[]; user?: ManagedUser; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   const defaultAccountType = user?.accountType ?? "customer_user";
+  const [accountType, setAccountType] = useState<ManagedUser["accountType"]>(defaultAccountType);
+  const selectedCustomerIds = user?.customerIds ?? (user?.customerId ? [user.customerId] : []);
 
   return (
     <form className="modal-form" onSubmit={onSubmit}>
-      <label>User type<select name="accountType" defaultValue={defaultAccountType}><option value="platform_admin">Platform admin</option><option value="customer_user">Customer user</option></select></label>
-      <label>Customer<SelectCustomer customers={customers} defaultValue={user?.customerId ?? undefined} /></label>
+      <label>
+        User type
+        <select
+          name="accountType"
+          value={accountType}
+          onChange={(event) => setAccountType(event.target.value as ManagedUser["accountType"])}
+        >
+          <option value="platform_admin">Platform admin</option>
+          <option value="customer_user">Customer user</option>
+        </select>
+      </label>
+
+      {accountType === "customer_user" && (
+        <fieldset className="checkbox-fieldset">
+          <legend>Customer access</legend>
+          <small>Select one or more customers this user can access.</small>
+          <div className="checkbox-list">
+            {customers.map((customer) => (
+              <label className="checkbox-item" key={customer.id}>
+                <input
+                  type="checkbox"
+                  name="customerIds"
+                  value={customer.id}
+                  defaultChecked={selectedCustomerIds.includes(customer.id)}
+                />
+                <span>{customer.name}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
+      {accountType === "platform_admin" && (
+        <div className="form-note">Platform admins can see and manage all customers. No customer selection is required.</div>
+      )}
+
       <label>Name<input name="name" required placeholder="User full name" defaultValue={user?.name} /></label>
       <label>Email<input name="email" type="email" required placeholder="user@company.com" defaultValue={user?.email} /></label>
       {!user && (
@@ -1052,6 +1146,20 @@ function UserForm({ customers, user, onSubmit }: { customers: Customer[]; user?:
       <button className="button primary" type="submit">{user ? "Save user" : "Add user"}</button>
     </form>
   );
+}
+
+function formatUserCustomers(user: ManagedUser, customerName: Map<string, string>) {
+  if (user.accountType === "platform_admin") {
+    return "All customers";
+  }
+
+  const customerIds = user.customerIds?.length ? user.customerIds : user.customerId ? [user.customerId] : [];
+
+  if (customerIds.length === 0) {
+    return "Unassigned";
+  }
+
+  return customerIds.map((customerId) => customerName.get(customerId) ?? "Unknown customer").join(", ");
 }
 
 function RepositoryForm({ customers, repository, onSubmit }: { customers: Customer[]; repository?: BackupRepository; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {

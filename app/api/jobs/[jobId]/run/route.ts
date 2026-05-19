@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { demoAccepted, getAuthenticatedSupabase, unauthorized } from "@/lib/api";
+import { demoAccepted, getAuthenticatedAdminSupabase, serverConfigError, unauthorized } from "@/lib/api";
 
 type RouteContext = {
   params: Promise<{ jobId: string }>;
@@ -8,17 +8,21 @@ type RouteContext = {
 export async function POST(request: Request, context: RouteContext) {
   await request.json();
   const { jobId } = await context.params;
-  const { supabase, userId, demo } = await getAuthenticatedSupabase();
+  const { admin, userId, demo, configError } = await getAuthenticatedAdminSupabase();
 
   if (demo) {
     return demoAccepted({ jobId });
   }
 
-  if (!supabase || !userId) {
+  if (!userId) {
     return unauthorized();
   }
 
-  const { data: job, error: jobError } = await supabase
+  if (!admin) {
+    return serverConfigError(configError ?? "Supabase admin client is not configured.");
+  }
+
+  const { data: job, error: jobError } = await admin
     .from("protection_jobs")
     .select("customer_id,action,policy")
     .eq("id", jobId)
@@ -30,7 +34,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   const policy = typeof job.policy === "object" && job.policy !== null ? job.policy : {};
 
-  await supabase
+  await admin
     .from("protection_jobs")
     .update({
       policy: {
@@ -45,14 +49,14 @@ export async function POST(request: Request, context: RouteContext) {
     })
     .eq("id", jobId);
 
-  await supabase.from("job_runs").insert({
+  await admin.from("job_runs").insert({
     customer_id: job.customer_id,
     job_id: jobId,
     status: "running",
     started_at: new Date().toISOString()
   });
 
-  await supabase.from("commands").insert({
+  await admin.from("commands").insert({
     customer_id: job.customer_id,
     command_type: job.action,
     payload: {

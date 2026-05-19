@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { demoAccepted, getAuthenticatedSupabase, unauthorized } from "@/lib/api";
+import { demoAccepted, getAuthenticatedAdminSupabase, serverConfigError, unauthorized } from "@/lib/api";
 
 type RouteContext = {
   params: Promise<{ customerId: string }>;
@@ -8,17 +8,21 @@ type RouteContext = {
 export async function PATCH(request: Request, context: RouteContext) {
   const payload = await request.json();
   const { customerId } = await context.params;
-  const { supabase, userId, demo } = await getAuthenticatedSupabase();
+  const { admin, userId, demo, configError } = await getAuthenticatedAdminSupabase();
 
   if (demo) {
     return demoAccepted({ customerId, ...payload });
   }
 
-  if (!supabase || !userId) {
+  if (!userId) {
     return unauthorized();
   }
 
-  const { error } = await supabase
+  if (!admin) {
+    return serverConfigError(configError ?? "Supabase admin client is not configured.");
+  }
+
+  const { error } = await admin
     .from("customers")
     .update({ name: payload.name, mode: payload.mode })
     .eq("id", customerId);
@@ -32,17 +36,21 @@ export async function PATCH(request: Request, context: RouteContext) {
 
 export async function DELETE(_request: Request, context: RouteContext) {
   const { customerId } = await context.params;
-  const { supabase, userId, demo } = await getAuthenticatedSupabase();
+  const { admin, userId, demo, configError } = await getAuthenticatedAdminSupabase();
 
   if (demo) {
     return demoAccepted({ customerId });
   }
 
-  if (!supabase || !userId) {
+  if (!userId) {
     return unauthorized();
   }
 
-  const { error } = await supabase.from("customers").delete().eq("id", customerId);
+  if (!admin) {
+    return serverConfigError(configError ?? "Supabase admin client is not configured.");
+  }
+
+  const { error } = await admin.from("customers").delete().eq("id", customerId);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });

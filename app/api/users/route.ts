@@ -1,10 +1,21 @@
 import { NextResponse } from "next/server";
-import { demoAccepted, getAuthenticatedSupabase, unauthorized } from "@/lib/api";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { demoAccepted, getAuthenticatedAdminSupabase, serverConfigError, unauthorized } from "@/lib/api";
+
+function readCustomerIds(payload: { accountType?: string; customerIds?: unknown; customerId?: unknown }) {
+  if (payload.accountType === "platform_admin") {
+    return [];
+  }
+
+  if (Array.isArray(payload.customerIds)) {
+    return payload.customerIds.map(String).filter(Boolean);
+  }
+
+  return payload.customerId ? [String(payload.customerId)] : [];
+}
 
 export async function POST(request: Request) {
   const payload = await request.json();
-  const { userId, demo } = await getAuthenticatedSupabase();
+  const { admin, userId, demo, configError } = await getAuthenticatedAdminSupabase();
 
   if (demo) {
     return demoAccepted({ ...payload, password: undefined });
@@ -18,14 +29,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
   }
 
-  let admin;
-  try {
-    admin = createSupabaseAdminClient();
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Supabase admin client is not configured." },
-      { status: 500 }
-    );
+  const customerIds = readCustomerIds(payload);
+
+  if (payload.accountType === "customer_user" && customerIds.length === 0) {
+    return NextResponse.json({ error: "Select at least one customer for this customer user." }, { status: 400 });
+  }
+
+  if (!admin) {
+    return serverConfigError(configError ?? "Supabase admin client is not configured.");
   }
 
   const { data: authData, error: authError } = await admin.auth.admin.createUser({
@@ -36,7 +47,7 @@ export async function POST(request: Request) {
       name: payload.name,
       role: payload.role,
       accountType: payload.accountType,
-      customerId: payload.accountType === "platform_admin" ? null : payload.customerId
+      customerIds
     }
   });
 
@@ -45,14 +56,14 @@ export async function POST(request: Request) {
   }
 
   const authUserId = authData.user.id;
-  const customerId = payload.accountType === "platform_admin" ? null : payload.customerId;
+  const primaryCustomerId = payload.accountType === "platform_admin" ? null : customerIds[0];
 
   const { error: managedUserError } = await admin
     .from("managed_users")
     .upsert({
       id: authUserId,
       account_type: payload.accountType,
-      customer_id: customerId,
+      customer_id: primaryCustomerId,
       name: payload.name,
       email: payload.email,
       role: payload.role,
@@ -66,10 +77,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: managedUserError.message }, { status: 400 });
   }
 
-  if (customerId) {
-    const { error: membershipError } = await admin
-      .from("customer_members")
-      .upsert({ customer_id: customerId, user_id: authUserId, role: payload.role });
+  if (customerIds.length > 0) {
+    const memberships = customerIds.map((customerId) => ({
+      customer_id: customerId,
+      user_id: authUserId,
+      role: payload.role
+    }));
+
+    const { error: membershipError } = await admin.from("customer_members").upsert(memberships);
 
     if (membershipError) {
       await admin.from("managed_users").delete().eq("id", authUserId);
