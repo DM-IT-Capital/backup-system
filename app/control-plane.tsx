@@ -175,7 +175,7 @@ export function ControlPlane({
     setModal(null);
   }
 
-  function inviteUser(event: FormEvent<HTMLFormElement>) {
+  async function addUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const accountType = String(form.get("accountType")) as ManagedUser["accountType"];
@@ -186,13 +186,24 @@ export function ControlPlane({
       name: String(form.get("name")),
       email: String(form.get("email")),
       role: String(form.get("role")) as UserRole,
-      status: "invited",
+      status: "active",
       lastSeen: "Never"
     };
-    setStore((current) => ({ ...current, users: [user, ...current.users] }));
-    void postJson("/api/users", user);
-    setMessage(`Invitation queued for ${user.email}`);
-    setModal(null);
+
+    try {
+      const result = await postJsonStrict<{ id?: string }>("/api/users", {
+        ...user,
+        password: String(form.get("password"))
+      });
+      setStore((current) => ({
+        ...current,
+        users: [{ ...user, id: result.id ?? user.id }, ...current.users]
+      }));
+      setMessage(`User ${user.email} created and can now sign in`);
+      setModal(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to create user");
+    }
   }
 
   function editUser(event: FormEvent<HTMLFormElement>) {
@@ -689,7 +700,7 @@ export function ControlPlane({
           <section className="panel page-panel">
             <div className="panel-head">
               <h2>User management</h2>
-              <button type="button" className="ghost" onClick={() => setModal("user")}>Invite user</button>
+              <button type="button" className="ghost" onClick={() => setModal("user")}>Add user</button>
             </div>
             <div className="table">
               <div className="table-row user-table-row table-head">
@@ -923,7 +934,7 @@ export function ControlPlane({
             </div>
             {modal === "customer" && <CustomerForm onSubmit={addCustomer} />}
             {modal === "editCustomer" && activeCustomer && <CustomerForm customer={activeCustomer} onSubmit={editCustomer} />}
-            {modal === "user" && <UserForm customers={store.customers} onSubmit={inviteUser} />}
+            {modal === "user" && <UserForm customers={store.customers} onSubmit={addUser} />}
             {modal === "editUser" && activeUser && <UserForm customers={store.customers} user={activeUser} onSubmit={editUser} />}
             {modal === "server" && <ServerForm customers={store.customers} onSubmit={addServer} />}
             {modal === "editServer" && activeServer && <ServerForm customers={store.customers} server={activeServer} onSubmit={editServer} />}
@@ -956,6 +967,24 @@ async function postJson(path: string, payload: unknown) {
   }
 }
 
+
+async function postJsonStrict<T>(path: string, payload: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  const body = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const message = typeof body?.error === "string" ? body.error : "Request failed";
+    throw new Error(message);
+  }
+
+  return body as T;
+}
+
 async function patchJson(path: string, payload: unknown) {
   try {
     await fetch(path, {
@@ -979,7 +1008,7 @@ async function deleteJson(path: string) {
 const modalTitles: Record<Exclude<Modal, null>, string> = {
   customer: "New customer",
   editCustomer: "Edit customer",
-  user: "Invite user",
+  user: "Add user",
   editUser: "Edit user",
   server: "Add server by IP",
   editServer: "Edit server",
@@ -1013,11 +1042,14 @@ function UserForm({ customers, user, onSubmit }: { customers: Customer[]; user?:
       <label>Customer<SelectCustomer customers={customers} defaultValue={user?.customerId ?? undefined} /></label>
       <label>Name<input name="name" required placeholder="User full name" defaultValue={user?.name} /></label>
       <label>Email<input name="email" type="email" required placeholder="user@company.com" defaultValue={user?.email} /></label>
+      {!user && (
+        <label>Temporary password<input name="password" type="password" minLength={8} required placeholder="At least 8 characters" /></label>
+      )}
       <label>Role<select name="role" defaultValue={user?.role ?? "operator"}><option value="owner">Owner</option><option value="admin">Admin</option><option value="operator">Operator</option><option value="viewer">Viewer</option></select></label>
       {user && (
         <label>Status<select name="status" defaultValue={user.status}><option value="active">Active</option><option value="invited">Invited</option><option value="disabled">Disabled</option></select></label>
       )}
-      <button className="button primary" type="submit">{user ? "Save user" : "Invite user"}</button>
+      <button className="button primary" type="submit">{user ? "Save user" : "Add user"}</button>
     </form>
   );
 }

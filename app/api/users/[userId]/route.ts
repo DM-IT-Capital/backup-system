@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { demoAccepted, getAuthenticatedSupabase, unauthorized } from "@/lib/api";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type RouteContext = {
   params: Promise<{ userId: string }>;
@@ -53,6 +54,14 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+
+  try {
+    const admin = createSupabaseAdminClient();
+    await admin.from("customer_members").delete().eq("user_id", userId);
+    await admin.auth.admin.deleteUser(userId);
+  } catch {
+    // Managed user deletion has succeeded. Auth cleanup requires SUPABASE_SERVICE_ROLE_KEY.
   }
 
   return NextResponse.json({ accepted: true });

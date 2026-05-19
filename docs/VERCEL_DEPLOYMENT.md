@@ -67,3 +67,13 @@ Keep these workloads outside Vercel:
 - Long-running scheduled workers.
 
 Use the Vercel-hosted app as the control plane. The on-prem gateway should perform customer-network operations and report progress back to Supabase/API routes.
+
+## Required Supabase variables for login and Add user
+
+In Vercel, add these Environment Variables for the Production environment, then redeploy:
+
+- `NEXT_PUBLIC_SUPABASE_URL` - Supabase Project URL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anon public key
+- `SUPABASE_SERVICE_ROLE_KEY` - Supabase service role secret key, required by the Add user flow to create Supabase Auth users without email invites
+
+The first admin must still exist in Supabase Auth before the first login. Create it in Supabase Dashboard > Authentication > Users > Add user, confirm the email, then use it to sign in to this app. After that, use the Users page > Add user button to create more platform or customer users with a temporary password.
